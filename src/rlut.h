@@ -5,6 +5,7 @@ extern "C" {
 #endif
 
 #include <stdint.h>
+#include <stdarg.h>
 
 #ifndef RLUT_MALLOC
 #define RLUT_MALLOC malloc
@@ -19,7 +20,15 @@ extern "C" {
 int rlutInit(int argc, const char *argv[]);
 void rlutDisplayFunc(void(*func)(void));
 void rlutReshapeFunc(void(*func)(int columns, int rows));
+void rlutKillLoop(void);
 int rlutMainLoop(void);
+
+void rlutClear(void);
+void rlutMoveCursor(unsigned int x, unsigned int y);
+void rlutScreenSize(unsigned int *width, unsigned int *height);
+void rlutCursorPosition(unsigned int *x, unsigned int *y);
+void rlutPrintChar(unsigned char ch);
+void rlutPrintString(const char *fmt, ...);
 
 void rlutSetSeed(uint64_t seed);
 uint64_t rlutRandom(void);

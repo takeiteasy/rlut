@@ -6,6 +6,8 @@
 #include "imtui/imtui-impl-ncurses.h"
 #include <limits>
 #include <algorithm>
+#include <string>
+#include <vector>
 
 static struct {
     ImTui::TScreen* screen;
@@ -13,6 +15,10 @@ static struct {
     void(*reshapeFunc)(int, int);
     bool running;
     uint64_t seed;
+    unsigned int screenW, screenH;
+    unsigned int cursorX, cursorY;
+    unsigned int cameraX, cameraY;
+    std::vector<std::string> screenBuffer;
 } rlut = {0};
 
 int rlutInit(int argc, const char *argv[]) {
@@ -20,6 +26,12 @@ int rlutInit(int argc, const char *argv[]) {
     ImGui::CreateContext();
     rlut.screen = ImTui_ImplNcurses_Init(true);
     ImTui_ImplText_Init();
+    rlutScreenSize(&rlut.screenW, &rlut.screenH);
+    rlut.screenBuffer.reserve(rlut.screenH);
+    for (int y = 0; y < rlut.screenH; y++)
+        rlut.screenBuffer.push_back(std::string(rlut.screenW, ' '));
+    rlut.cursorX = rlut.cursorY = 0;
+    rlut.cameraX = rlut.cameraY = 0;
     rlutSetSeed(0);
     return 1;
 }
@@ -32,6 +44,34 @@ void rlutReshapeFunc(void(*func)(int columns, int rows)) {
     rlut.reshapeFunc = func;
 }
 
+static void ResizeScreenBuffer(void) {
+    int lastW = rlut.screenW, lastH = rlut.screenH;
+    rlutScreenSize(&rlut.screenW, &rlut.screenH);
+    // Resize rows if height has changed
+    if (rlut.screenH != lastH) {
+        if (rlut.screenH > lastH) {
+            for (int i = 0; i < rlut.screenH - lastH; i++)
+                rlut.screenBuffer.push_back(std::string(rlut.screenW, ' '));
+        } else
+            rlut.screenBuffer.resize(rlut.screenH);
+    }
+    // Resize columns if width has changed
+    if (rlut.screenW != lastW)
+        for (int y = 0; y < rlut.screenH; y++) {
+            if (lastW > rlut.screenW)
+                rlut.screenBuffer[y].resize(rlut.screenW);
+            else
+                rlut.screenBuffer[y] += std::string(rlut.screenW - lastW, ' ');
+        }
+    // Size changed, call reshape callback if it's set
+    if ((rlut.screenW != lastW || rlut.screenH != lastH) && rlut.reshapeFunc)
+        rlut.reshapeFunc(rlut.screenW, rlut.screenH);
+}
+
+void rlutKillLoop(void) {
+    rlut.running = false;
+}
+
 int rlutMainLoop(void) {
     assert(rlut.displayFunc);
     rlut.running = true;
@@ -39,7 +79,42 @@ int rlutMainLoop(void) {
         ImTui_ImplNcurses_NewFrame();
         ImTui_ImplText_NewFrame();
         ImGui::NewFrame();
+        
+        ResizeScreenBuffer();
         rlut.displayFunc();
+        
+        const ImGuiViewport *viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, 0x000000FF);
+        static bool alwaysOpen = true;
+        if (ImGui::Begin("screen", &alwaysOpen,
+                        ImGuiWindowFlags_NoBringToFrontOnFocus |
+                        ImGuiWindowFlags_NoDecoration |
+                        ImGuiWindowFlags_NoMove |
+                        ImGuiWindowFlags_NoSavedSettings |
+                        ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                    ImVec2 mpos = ImGui::GetMousePos();
+                    rlut.cameraX = mpos.x - (rlut.screenW / 2);
+                    rlut.cameraY = mpos.y - (rlut.screenH / 2);
+                }
+                if (ImGui::IsKeyDown('w'))
+                    rlut.cameraY -= 5;
+                if (ImGui::IsKeyDown('a'))
+                    rlut.cameraX -= 5;
+                if (ImGui::IsKeyDown('s'))
+                    rlut.cameraY += 5;
+                if (ImGui::IsKeyDown('d'))
+                    rlut.cameraX += 5;
+            }
+            
+            ImGui::Text("This is a: `%s`", "test");
+            ImGui::PopStyleColor();
+        }
+        ImGui::End();
+        
         ImGui::Render();
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.screen);
         ImTui_ImplNcurses_DrawScreen();
@@ -47,6 +122,38 @@ int rlutMainLoop(void) {
     ImTui_ImplText_Shutdown();
     ImTui_ImplNcurses_Shutdown();
     return 0;
+}
+
+void rlutClear(void) {
+    
+}
+
+void rlutMoveCursor(unsigned int x, unsigned int y) {
+    
+}
+
+void rlutScreenSize(unsigned int *width, unsigned int *height) {
+    unsigned int col, row;
+    getmaxyx(stdscr, row, col);
+    if (width)
+        *width = col;
+    if (height)
+        *height = row;
+}
+
+void rlutCursorPosition(unsigned int *x, unsigned int *y) {
+    if (x)
+        *x = rlut.cursorX;
+    if (y)
+        *y = rlut.cursorY;
+}
+
+void rlutPrintChar(unsigned char ch) {
+    
+}
+
+void rlutPrintString(const char *fmt, ...) {
+    
 }
 
 void rlutSetSeed(uint64_t seed) {
