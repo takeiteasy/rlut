@@ -1,3 +1,28 @@
+/* rlut.cpp -- https://www.github.com/takeiteasy/rlut
+ 
+ The MIT License (MIT)
+
+ Copyright (c) 2024 George Watson
+
+ Permission is hereby granted, free of charge, to any person
+ obtaining a copy of this software and associated documentation
+ files (the "Software"), to deal in the Software without restriction,
+ including without limitation the rights to use, copy, modify, merge,
+ publish, distribute, sublicense, and/or sell copies of the Software,
+ and to permit persons to whom the Software is furnished to do so,
+ subject to the following conditions:
+
+ The above copyright notice and this permission notice shall be
+ included in all copies or substantial portions of the Software.
+
+ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. */
+
 #include "rlut.h"
 #include <assert.h>
 #include <ncurses.h>
@@ -12,7 +37,10 @@
 static struct {
     ImTui::TScreen* screen;
     void(*displayFunc)(void);
+    void(*preframeFunc)(void);
+    void(*postframeFunc)(void);
     void(*reshapeFunc)(int, int);
+    void(*atExitFunc)(void);
     bool running;
     uint64_t seed;
     unsigned int screenW, screenH;
@@ -40,8 +68,20 @@ void rlutDisplayFunc(void(*func)(void)) {
     rlut.displayFunc = func;
 }
 
+void rlutPreframeFunc(void(*func)(void)) {
+    rlut.preframeFunc = func;
+}
+
+void rlutPostframeFunc(void(*func)(void)) {
+    rlut.postframeFunc = func;
+}
+
 void rlutReshapeFunc(void(*func)(int columns, int rows)) {
     rlut.reshapeFunc = func;
+}
+
+void rlutAtExit(void(*func)(void)) {
+    rlut.atExitFunc = func;
 }
 
 static void ResizeScreenBuffer(void) {
@@ -80,6 +120,9 @@ int rlutMainLoop(void) {
         ImTui_ImplText_NewFrame();
         ImGui::NewFrame();
         
+        if (rlut.preframeFunc)
+            rlut.preframeFunc();
+        
         ResizeScreenBuffer();
         rlut.displayFunc();
         
@@ -87,8 +130,7 @@ int rlutMainLoop(void) {
         ImGui::SetNextWindowPos(viewport->Pos);
         ImGui::SetNextWindowSize(viewport->Size);
         ImGui::PushStyleColor(ImGuiCol_WindowBg, 0x000000FF);
-        static bool alwaysOpen = true;
-        if (ImGui::Begin("screen", &alwaysOpen,
+        if (ImGui::Begin("screen", NULL,
                         ImGuiWindowFlags_NoBringToFrontOnFocus |
                         ImGuiWindowFlags_NoDecoration |
                         ImGuiWindowFlags_NoMove |
@@ -110,15 +152,25 @@ int rlutMainLoop(void) {
                     rlut.cameraX += 5;
             }
             
-            ImGui::Text("This is a: `%s`", "test");
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.f, 1.f, 0.f, 1.f));
+            ImGui::Text("this is the first line");
             ImGui::PopStyleColor();
+            ImGui::SameLine(0, 0);
+            ImGui::Text("this is thhe second line");
         }
+        ImGui::PopStyleColor();
         ImGui::End();
         
         ImGui::Render();
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.screen);
         ImTui_ImplNcurses_DrawScreen();
+        
+        if (rlut.postframeFunc)
+            rlut.postframeFunc();
     }
+    
+    if (rlut.atExitFunc)
+        rlut.atExitFunc();
     ImTui_ImplText_Shutdown();
     ImTui_ImplNcurses_Shutdown();
     return 0;
