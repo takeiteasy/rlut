@@ -1,0 +1,52 @@
+name: rlut
+
+options:
+  bundleIdPrefix: io.github.takeiteasy
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "14.0"
+
+settings:
+  CLANG_CXX_LANGUAGE_STANDARD: c++11
+  CLANG_CXX_LIBRARY: libc++
+  GCC_C_LANGUAGE_STANDARD: c11
+  CLANG_WARN_DOCUMENTATION_COMMENTS: false
+
+targets:
+  rlut-test:
+    type: tool
+    platform: macOS
+    sources:
+        - path: aux/test.c
+    dependencies:
+        - target: rlut
+    settings:
+        HEADER_SEARCH_PATHS: [$(PROJECT_DIR)/deps]
+  rlut:
+    type: library.dynamic
+    platform: macOS
+    sources:
+        - path: src/
+        - path: deps/imtui
+          includes:
+            - "*.cpp"
+          excludes:
+            - "*emscripten*"
+        - path: deps/imgui
+          includes:
+            - "*.cpp"
+        - path: deps/
+          type: folder
+        - path: aux/
+          type: folder
+        - path: README.md
+          type: folder
+        - path: Makefile
+          type: folder
+        - path: project.yml
+          type: folder
+    dependencies:
+        - sdk: libncurses.tbd
+    settings:
+        HEADER_SEARCH_PATHS: [$(PROJECT_DIR)/deps]
+        OTHER_CFLAGS: ["-x objective-c++", -fobjc-arc]
