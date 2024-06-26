@@ -35,6 +35,10 @@
 #include <sstream>
 #include <vector>
 
+#define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
+#define RLUT_MAX(A, B)        (((A) >= (B)) ? (A) : (B))
+#define RLUT_CLAMP(V, MN, MX) ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
+
 #if defined(RLUT_SDL2)
 #if defined(_WIN32) || defined(_WIN64)
 #define RLUT_WINDOWS
@@ -46,25 +50,6 @@
 #define RLUT_LINUX
 #include <unistd.h>
 #endif
-
-void rlutBeep(void) {
-#if defined(RLUT_WINDOWS)
-    SystemSoundsBeep(TONE_750, 250);
-#elif defined(RLUT_MAC)
-    NSBeep();
-#else
-    int fd = open("/dev/console", O_WRONLY);
-    if (fd == -1)
-        return;
-    unsigned int value = (750 << 16) | 250;
-    int ret = ioctl(fd, KIOCSOUND, &value);
-    close(fd);
-#endif
-}
-#else
-void rlutBeep(void) {
-    beep();
-}
 #endif
 
 static struct {
@@ -78,7 +63,9 @@ static struct {
     uint64_t seed;
     unsigned int screenW, screenH;
     unsigned int cursorX, cursorY;
-    
+    uint8_t textMode;
+    uint8_t backgroundColor;
+    uint8_t foregroundColor;
     std::vector<std::vector<uint32_t>> screenBuffer;
 } rlut = {0};
 
@@ -142,6 +129,16 @@ void rlutKillLoop(void) {
     rlut.running = false;
 }
 
+union Cell {
+    struct {
+        uint8_t ch;
+        uint8_t fg;
+        uint8_t bg;
+        uint8_t mode;
+    };
+    uint32_t value;
+};
+
 int rlutMainLoop(void) {
     assert(rlut.displayFunc);
     rlut.running = true;
@@ -151,11 +148,14 @@ int rlutMainLoop(void) {
         ImGui::NewFrame();
         ResizeScreenBuffer();
         
+        rlut.textMode = 0;
+        rlut.backgroundColor = 0;
+        rlut.foregroundColor = 0;
+        
         if (rlut.preframeFunc)
             rlut.preframeFunc();
         
         rlut.displayFunc();
-        
         
         ImGui::Begin("test");
         ImGui::Text("Hello, world!");
@@ -188,37 +188,37 @@ void rlutClear(void) {
     rlut.cursorX = rlut.cursorY = 0;
 }
 
-#define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
-#define RLUT_MAX(A, B)        (((A) >= (B)) ? (A) : (B))
-#define RLUT_CLAMP(V, MN, MX) ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
-
 void rlutMoveCursor(int x, int y) {
-    int dy = rlut.cursorY + y;
-    rlut.cursorY = RLUT_CLAMP(dy, 0, rlut.screenH - 1);
-    int dx = rlut.cursorX + x;
-    if (dx < 0) {
-        // Underflow, wrap backwards to previous line unless on first line
-        if (rlut.cursorY == 0)
-            rlut.cursorX = 0;
-        else {
-            rlut.cursorY--;
-            rlut.cursorX = rlut.screenW + dx;
-        }
+    if (y != 0) {
+        int dy = rlut.cursorY + y;
+        rlut.cursorY = RLUT_CLAMP(dy, 0, rlut.screenH - 1);
     }
-    else if (dx >= rlut.screenW) {
-        // Overflow, wrap forwards to next line unless on last line
-        if (rlut.cursorY == rlut.screenH - 1)
-            rlut.cursorX = rlut.screenW - 1;
-        else {
-            rlut.cursorY++;
-            rlut.cursorX = dx - rlut.screenW;
+    if (x != 0) {
+        int dx = rlut.cursorX + x;
+        if (dx < 0) {
+            // Underflow, wrap backwards to previous line unless on first line
+            if (rlut.cursorY == 0)
+                rlut.cursorX = 0;
+            else {
+                rlut.cursorY--;
+                rlut.cursorX = rlut.screenW + dx;
+            }
         }
-    } else
-        rlut.cursorX = dx; // No wrapping needed
+        else if (dx >= rlut.screenW) {
+            // Overflow, wrap forwards to next line unless on last line
+            if (rlut.cursorY == rlut.screenH - 1)
+                rlut.cursorX = rlut.screenW - 1;
+            else {
+                rlut.cursorY++;
+                rlut.cursorX = dx - rlut.screenW;
+            }
+        } else
+            rlut.cursorX = dx; // No wrapping needed
+    }
 }
 
-// Coordinates set with SetCursor won't be wrapped but will be clamped to
-// the screen bounds.
+// NOTE: Coordinates set with SetCursor won't be wrapped but will be clamped to
+//       the screen bounds.
 void rlutSetCursor(unsigned int x, unsigned int y) {
     rlut.cursorX = RLUT_MIN(rlut.screenW-1, x);
     rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
@@ -243,16 +243,6 @@ void rlutCursorPosition(unsigned int *x, unsigned int *y) {
     if (y)
         *y = rlut.cursorY;
 }
-
-union Cell{
-    struct {
-        uint8_t ch;
-        uint8_t fg;
-        uint8_t bg;
-        uint8_t mode;
-    };
-    uint32_t value;
-};
 
 void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
     assert(rlut.cursorX >= 0 && rlut.cursorY >= 0 && rlut.cursorX < rlut.screenW && rlut.cursorY < rlut.screenH);
@@ -280,13 +270,9 @@ void rlutPrintString(const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(buffer.data(), buffer.size(), fmt, args);
     va_end(args);
-    std::string _str = ss.str();
-    const char *str = _str.c_str();
-
-    uint8_t textMode = 0;
-    uint8_t backgroundColor = 0;
-    uint8_t foregroundColor = 1;
-    for (const char *p = str; *p; p++) {
+    std::string str = ss.str();
+    
+    for (const char *p = str.c_str(); *p; p++) {
         switch (*p) {
             case '\a':
                 rlutBeep();
@@ -295,7 +281,7 @@ void rlutPrintString(const char *fmt, ...) {
                 rlutMoveCursor(-1, 0);
                 break;
             case '\e':
-                ParseANSIEscape(p, &textMode, &foregroundColor, &backgroundColor);
+                ParseANSIEscape(p, &rlut.textMode, &rlut.foregroundColor, &rlut.backgroundColor);
                 break;
             case '\n':
                 rlut.cursorX = 0;
@@ -308,14 +294,46 @@ void rlutPrintString(const char *fmt, ...) {
                 rlut.cursorX = 0;
                 break;
             case '\t':
-                rlutMoveCursor((rlut.cursorX + 7) & ~7, 0);
+                if (rlut.cursorX == rlut.screenW - 1) {
+                    if (rlut.cursorY != rlut.screenH - 1) {
+                        rlut.cursorY++;
+                        rlut.cursorX = 0;
+                    }
+                } else {
+                    int dx = (rlut.cursorX + 7) & ~7;
+                    if (dx >= rlut.screenW)
+                        rlut.cursorX = rlut.screenW - 1;
+                    else
+                        rlut.cursorX = dx;
+                }
                 break;
             default:
-                rlutPrintChar(*p, textMode, foregroundColor, backgroundColor);
+                rlutPrintChar(*p, rlut.textMode, rlut.foregroundColor, rlut.backgroundColor);
                 break;
         }
     }
 }
+
+#if defined(RLUT_SDL2)
+void rlutBeep(void) {
+#if defined(RLUT_WINDOWS)
+    SystemSoundsBeep(TONE_750, 250);
+#elif defined(RLUT_MAC)
+    NSBeep();
+#else
+    int fd = open("/dev/console", O_WRONLY);
+    if (fd == -1)
+        return;
+    unsigned int value = (750 << 16) | 250;
+    int ret = ioctl(fd, KIOCSOUND, &value);
+    close(fd);
+#endif
+}
+#else
+void rlutBeep(void) {
+    beep();
+}
+#endif
 
 void rlutSetSeed(uint64_t seed) {
     rlut.seed = seed ? seed : time(NULL);

@@ -54,6 +54,7 @@ void rlutAtExit(void(*func)(void));
 void rlutKillLoop(void);
 int rlutMainLoop(void);
 void rlutBeep(void);
+
 // Cursor + screen state functions
 void rlutClear(void);
 void rlutMoveCursor(int x, int y);
@@ -62,13 +63,15 @@ void rlutScreenSize(unsigned int *width, unsigned int *height);
 void rlutCursorPosition(unsigned int *x, unsigned int *y);
 void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t foregroundColor, uint8_t backgroundColor);
 void rlutPrintString(const char *fmt, ...);
+
 // RNG + seed functions
 void rlutSetSeed(uint64_t seed);
 uint64_t rlutRandom(void);
 float rlutRandomFloat(void);
 int rlutRandomIntRange(int min, int max);
 float rlutRandomFloatRange(float min, float max);
-// Map generation + noise functions
+
+// Map + noise functions
 uint8_t* rlutCellularAutomataMap(unsigned int width, unsigned int height, unsigned int fillChance, unsigned int smoothIterations, unsigned int survive, unsigned int starve);
 uint8_t* rlutPerlinNoiseMap(unsigned int width, unsigned int height, float z, float offsetX, float offsetY, float scale, float lacunarity, float gain, float octaves);
 float rlutPerlinNoise(float x, float y, float z);
