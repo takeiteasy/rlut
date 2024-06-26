@@ -54,10 +54,11 @@ void rlutKillLoop(void);
 int rlutMainLoop(void);
 // Cursor + screen state functions
 void rlutClear(void);
-void rlutMoveCursor(unsigned int x, unsigned int y);
+void rlutMoveCursor(int x, int y);
+void rlutSetCursor(unsigned int x, unsigned int y);
 void rlutScreenSize(unsigned int *width, unsigned int *height);
 void rlutCursorPosition(unsigned int *x, unsigned int *y);
-void rlutPrintChar(unsigned char ch);
+void rlutPrintChar(uint8_t ch, uint8_t fgR, uint8_t fgG, uint8_t fgB);
 void rlutPrintString(const char *fmt, ...);
 // RNG + seed functions
 void rlutSetSeed(uint64_t seed);

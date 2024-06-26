@@ -32,6 +32,7 @@
 #include <limits>
 #include <algorithm>
 #include <string>
+#include <sstream>
 #include <vector>
 
 static struct {
@@ -46,7 +47,9 @@ static struct {
     unsigned int screenW, screenH;
     unsigned int cursorX, cursorY;
     unsigned int cameraX, cameraY;
-    std::vector<std::string> screenBuffer;
+    bool enableWrapCursor;
+    bool disableCursorAdvance;
+    std::vector<std::vector<uint32_t>> screenBuffer;
 } rlut = {0};
 
 int rlutInit(int argc, const char *argv[]) {
@@ -55,11 +58,7 @@ int rlutInit(int argc, const char *argv[]) {
     rlut.screen = ImTui_ImplNcurses_Init(true);
     ImTui_ImplText_Init();
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
-    rlut.screenBuffer.reserve(rlut.screenH);
-    for (int y = 0; y < rlut.screenH; y++)
-        rlut.screenBuffer.push_back(std::string(rlut.screenW, ' '));
-    rlut.cursorX = rlut.cursorY = 0;
-    rlut.cameraX = rlut.cameraY = 0;
+    rlutClear();
     rlutSetSeed(0);
     return 1;
 }
@@ -91,7 +90,7 @@ static void ResizeScreenBuffer(void) {
     if (rlut.screenH != lastH) {
         if (rlut.screenH > lastH) {
             for (int i = 0; i < rlut.screenH - lastH; i++)
-                rlut.screenBuffer.push_back(std::string(rlut.screenW, ' '));
+                rlut.screenBuffer.push_back(std::vector<uint32_t>(rlut.screenW, 0));
         } else
             rlut.screenBuffer.resize(rlut.screenH);
     }
@@ -101,7 +100,8 @@ static void ResizeScreenBuffer(void) {
             if (lastW > rlut.screenW)
                 rlut.screenBuffer[y].resize(rlut.screenW);
             else
-                rlut.screenBuffer[y] += std::string(rlut.screenW - lastW, ' ');
+                for (int i = 0; i < rlut.screenW - lastW; i++)
+                    rlut.screenBuffer[y].push_back(0);
         }
     // Size changed, call reshape callback if it's set
     if ((rlut.screenW != lastW || rlut.screenH != lastH) && rlut.reshapeFunc)
@@ -119,12 +119,10 @@ int rlutMainLoop(void) {
         ImTui_ImplNcurses_NewFrame();
         ImTui_ImplText_NewFrame();
         ImGui::NewFrame();
+        ResizeScreenBuffer();
         
         if (rlut.preframeFunc)
             rlut.preframeFunc();
-        
-        ResizeScreenBuffer();
-        rlut.displayFunc();
         
         const ImGuiViewport *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->Pos);
@@ -136,22 +134,6 @@ int rlutMainLoop(void) {
                         ImGuiWindowFlags_NoMove |
                         ImGuiWindowFlags_NoSavedSettings |
                         ImGuiWindowFlags_AlwaysAutoResize)) {
-            if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) {
-                if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-                    ImVec2 mpos = ImGui::GetMousePos();
-                    rlut.cameraX = mpos.x - (rlut.screenW / 2);
-                    rlut.cameraY = mpos.y - (rlut.screenH / 2);
-                }
-                if (ImGui::IsKeyDown('w'))
-                    rlut.cameraY -= 5;
-                if (ImGui::IsKeyDown('a'))
-                    rlut.cameraX -= 5;
-                if (ImGui::IsKeyDown('s'))
-                    rlut.cameraY += 5;
-                if (ImGui::IsKeyDown('d'))
-                    rlut.cameraX += 5;
-            }
-            
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.f, 1.f, 0.f, 1.f));
             ImGui::Text("this is the first line");
             ImGui::PopStyleColor();
@@ -160,6 +142,8 @@ int rlutMainLoop(void) {
         }
         ImGui::PopStyleColor();
         ImGui::End();
+        
+        rlut.displayFunc();
         
         ImGui::Render();
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.screen);
@@ -177,11 +161,26 @@ int rlutMainLoop(void) {
 }
 
 void rlutClear(void) {
-    
+    rlut.screenBuffer.clear();
+    rlut.screenBuffer.reserve(rlut.screenH);
+    for (int y = 0; y < rlut.screenH; y++)
+        rlut.screenBuffer.push_back(std::vector<uint32_t>(rlut.screenW, 0));
+    rlut.cursorX = rlut.cursorY = 0;
+    rlut.cameraX = rlut.cameraY = 0;
 }
 
-void rlutMoveCursor(unsigned int x, unsigned int y) {
-    
+#define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
+#define RLUT_MAX(A, B)        (((A) >= (B)) ? (A) : (B))
+#define RLUT_CLAMP(V, MN, MX) ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
+
+void rlutMoveCursor(int x, int y) {
+    rlut.cursorX = RLUT_CLAMP(rlut.cursorX + x, 0, rlut.screenW-1);
+    rlut.cursorY = RLUT_CLAMP(rlut.cursorY + y, 0, rlut.screenH-1);
+}
+
+void rlutSetCursor(unsigned int x, unsigned int y) {
+    rlut.cursorX = RLUT_MIN(rlut.screenW-1, x);
+    rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
 }
 
 void rlutScreenSize(unsigned int *width, unsigned int *height) {
@@ -200,12 +199,55 @@ void rlutCursorPosition(unsigned int *x, unsigned int *y) {
         *y = rlut.cursorY;
 }
 
-void rlutPrintChar(unsigned char ch) {
+union Cell{
+    struct {
+        uint8_t ch;
+        uint8_t fgR;
+        uint8_t fgG;
+        uint8_t fgB;
+    };
+    uint32_t value;
+};
+
+void rlutPrintChar(uint8_t ch, uint8_t fgR, uint8_t fgG, uint8_t fgB) {
+    assert(rlut.cursorX >= 0 && rlut.cursorY >= 0 && rlut.cursorX < rlut.screenW && rlut.cursorY < rlut.screenH);
     
+    Cell cell = {
+        .ch = ch,
+        .fgR = fgR,
+        .fgG = fgG,
+        .fgB = fgB
+    };
+    rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
+    if (rlut.disableCursorAdvance)
+        return;
+    if (++rlut.cursorX >= rlut.screenW) {
+        if (rlut.enableWrapCursor) {
+            rlut.cursorX = 0;
+            if (++rlut.cursorY >= rlut.screenH)
+                rlut.cursorY = 0;
+        } else
+            rlut.cursorX--;
+    }
 }
 
 void rlutPrintString(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    std::stringstream ss;
+    int result = vsnprintf(NULL, 0, fmt, args);
+    std::vector<char> buffer(result + 1);
+    va_end(args);
+    va_start(args, fmt);
+    vsnprintf(buffer.data(), buffer.size(), fmt, args);
+    va_end(args);
     
+    ss << buffer.data();
+    std::string str = ss.str();
+    for (int i = 0; i < str.length(); i++) {
+        unsigned char ch = str[i];
+        // TODO: Parse ANSI escapes and write to buffer
+    }
 }
 
 void rlutSetSeed(uint64_t seed) {
@@ -219,9 +261,7 @@ uint64_t rlutRandom(void) {
 }
 
 float rlutRandomFloat(void) {
-    static const uint64_t max_uint64 = std::numeric_limits<uint64_t>::max();
-    uint64_t random_uint64 = rlutRandom();
-    return static_cast<float>(random_uint64) / static_cast<float>(max_uint64);
+    return static_cast<float>(rlutRandom()) / static_cast<float>(std::numeric_limits<uint64_t>::max());
 }
 
 int rlutRandomIntRange(int min, int max) {
@@ -236,17 +276,13 @@ float rlutRandomFloatRange(float min, float max) {
     return rlutRandomFloat() * (max - min) + min;
 }
 
-template <typename T> T clamp(const T& value, const T& min, const T& max) {
-    return std::max(min, std::min(value, max));
-}
-
 uint8_t* rlutCellularAutomataMap(unsigned int width, unsigned int height, unsigned int fillChance, unsigned int smoothIterations, unsigned int survive, unsigned int starve) {
     assert(width && height);
     size_t sz = width * height * sizeof(int);
     uint8_t *result = (uint8_t*)RLUT_MALLOC(sz);
     memset(result, 0, sz);
     // Randomly fill the grid
-    fillChance = clamp(static_cast<int>(fillChance), 1, 99);
+    fillChance = RLUT_CLAMP(fillChance, 1, 99);
     for (int x = 0; x < width; x++)
         for (int y = 0; y < height; y++)
             result[y * width + x] = rlutRandom() % 100 + 1 < fillChance;
@@ -372,40 +408,32 @@ float rlutPerlinNoise(float x, float y, float z) {
     int gx = FASTFLOOR(x);
     int gy = FASTFLOOR(y);
     int gz = FASTFLOOR(z);
-    
     /* Relative coords within grid cell */
     float rx = x - gx;
     float ry = y - gy;
     float rz = z - gz;
-    
     /* Wrap cell coords */
     gx = gx & 255;
     gy = gy & 255;
     gz = gz & 255;
-    
     /* Calculate gradient indices */
     unsigned int gi[8];
     for (int i = 0; i < 8; i++)
         gi[i] = perm[gx+((i>>2)&1)+perm[gy+((i>>1)&1)+perm[gz+(i&1)]]] % 12;
-    
     /* Noise contribution from each corner */
     float n[8];
     for (int i = 0; i < 8; i++)
         n[i] = dot3(grad3[gi[i]], rx - ((i>>2)&1), ry - ((i>>1)&1), rz - (i&1));
-    
     /* Fade curves */
     float u = fade(rx);
     float v = fade(ry);
     float w = fade(rz);
-    
     /* Interpolate */
     float nx[4];
     for (int i = 0; i < 4; i++)
         nx[i] = lerp(n[i], n[4+i], u);
-    
     float nxy[2];
     for (int i = 0; i < 2; i++)
         nxy[i] = lerp(nx[i], nx[2+i], v);
-    
     return lerp(nxy[0], nxy[1], w);
 }
