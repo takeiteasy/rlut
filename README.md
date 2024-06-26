@@ -1,6 +1,6 @@
 # RLUT
 
-**R**ogue-**l**ike **U**tilities **T**oolkit
+**R**ogue-**L**ike **U**tilities **T**oolkit
 
 ## LICENSE
 ```

@@ -22,6 +22,15 @@ targets:
         - target: rlut
     settings:
         HEADER_SEARCH_PATHS: [$(PROJECT_DIR)/deps]
+  rlut-gui-test:
+    type: tool
+    platform: macOS
+    sources:
+        - path: aux/test.c
+    dependencies:
+        - target: rlut-gui
+    settings:
+        HEADER_SEARCH_PATHS: [$(PROJECT_DIR)/deps]
   rlut:
     type: library.dynamic
     platform: macOS
@@ -50,3 +59,21 @@ targets:
     settings:
         HEADER_SEARCH_PATHS: [$(PROJECT_DIR)/deps]
         OTHER_CFLAGS: ["-x objective-c++", -fobjc-arc]
+  rlut-gui:
+    type: library.dynamic
+    platform: macOS
+    sources:
+        - path: src/
+        - path: deps/imgui
+          includes:
+            - "*.cpp"
+            - "backends/imgui_impl_sdl.cpp"
+            - "backends/imgui_impl_opengl3.cpp"
+    dependencies:
+        - sdk: /opt/homebrew/lib/libSDL2.dylib
+        - sdk: AppKit.framework
+    settings:
+        HEADER_SEARCH_PATHS: [/opt/homebrew/include,
+                              $(PROJECT_DIR)/deps]
+        LIBRARY_SEARCH_PATHS: [/opt/homebrew/lib]
+        OTHER_CFLAGS: [-DRLUT_SDL2, "-x objective-c++", -fobjc-arc]

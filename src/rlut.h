@@ -40,8 +40,9 @@ extern "C" {
 #endif
 
 // TODO: Input + event handling + forwarding
-// TODO: ImGUI wrapper functions
+// TODO: Update ImGUI to v1.84 + generate C wrapper
 // TODO: A*, Poisson disc sampling, FOV functions
+// TODO: Alternate SDL GUI version (after TUI version is finished)
 
 // Windows + context functions
 int rlutInit(int argc, const char *argv[]);
@@ -52,13 +53,14 @@ void rlutReshapeFunc(void(*func)(int columns, int rows));
 void rlutAtExit(void(*func)(void));
 void rlutKillLoop(void);
 int rlutMainLoop(void);
+void rlutBeep(void);
 // Cursor + screen state functions
 void rlutClear(void);
 void rlutMoveCursor(int x, int y);
 void rlutSetCursor(unsigned int x, unsigned int y);
 void rlutScreenSize(unsigned int *width, unsigned int *height);
 void rlutCursorPosition(unsigned int *x, unsigned int *y);
-void rlutPrintChar(uint8_t ch, uint8_t fgR, uint8_t fgG, uint8_t fgB);
+void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t foregroundColor, uint8_t backgroundColor);
 void rlutPrintString(const char *fmt, ...);
 // RNG + seed functions
 void rlutSetSeed(uint64_t seed);

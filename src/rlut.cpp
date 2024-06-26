@@ -35,6 +35,38 @@
 #include <sstream>
 #include <vector>
 
+#if defined(RLUT_SDL2)
+#if defined(_WIN32) || defined(_WIN64)
+#define RLUT_WINDOWS
+#include <windows.h>
+#elif defined(__APPLE__) || defined(__MACH__)
+#define RLUT_MAC
+#include <AppKit/AppKit.h>
+#else
+#define RLUT_LINUX
+#include <unistd.h>
+#endif
+
+void rlutBeep(void) {
+#if defined(RLUT_WINDOWS)
+    SystemSoundsBeep(TONE_750, 250);
+#elif defined(RLUT_MAC)
+    NSBeep();
+#else
+    int fd = open("/dev/console", O_WRONLY);
+    if (fd == -1)
+        return;
+    unsigned int value = (750 << 16) | 250;
+    int ret = ioctl(fd, KIOCSOUND, &value);
+    close(fd);
+#endif
+}
+#else
+void rlutBeep(void) {
+    beep();
+}
+#endif
+
 static struct {
     ImTui::TScreen* screen;
     void(*displayFunc)(void);
@@ -46,9 +78,7 @@ static struct {
     uint64_t seed;
     unsigned int screenW, screenH;
     unsigned int cursorX, cursorY;
-    unsigned int cameraX, cameraY;
-    bool enableWrapCursor;
-    bool disableCursorAdvance;
+    
     std::vector<std::vector<uint32_t>> screenBuffer;
 } rlut = {0};
 
@@ -124,31 +154,21 @@ int rlutMainLoop(void) {
         if (rlut.preframeFunc)
             rlut.preframeFunc();
         
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        ImGui::SetNextWindowPos(viewport->Pos);
-        ImGui::SetNextWindowSize(viewport->Size);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, 0x000000FF);
-        if (ImGui::Begin("screen", NULL,
-                        ImGuiWindowFlags_NoBringToFrontOnFocus |
-                        ImGuiWindowFlags_NoDecoration |
-                        ImGuiWindowFlags_NoMove |
-                        ImGuiWindowFlags_NoSavedSettings |
-                        ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.f, 1.f, 0.f, 1.f));
-            ImGui::Text("this is the first line");
-            ImGui::PopStyleColor();
-            ImGui::SameLine(0, 0);
-            ImGui::Text("this is thhe second line");
-        }
-        ImGui::PopStyleColor();
-        ImGui::End();
-        
         rlut.displayFunc();
+        
+        
+        ImGui::Begin("test");
+        ImGui::Text("Hello, world!");
+        ImGui::End();
         
         ImGui::Render();
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.screen);
         ImTui_ImplNcurses_DrawScreen();
         
+        init_pair(1, COLOR_BLACK, COLOR_RED);
+        attron(COLOR_PAIR(1));
+        mvprintw(0, 0, "test\n");
+
         if (rlut.postframeFunc)
             rlut.postframeFunc();
     }
@@ -166,7 +186,6 @@ void rlutClear(void) {
     for (int y = 0; y < rlut.screenH; y++)
         rlut.screenBuffer.push_back(std::vector<uint32_t>(rlut.screenW, 0));
     rlut.cursorX = rlut.cursorY = 0;
-    rlut.cameraX = rlut.cameraY = 0;
 }
 
 #define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
@@ -174,13 +193,39 @@ void rlutClear(void) {
 #define RLUT_CLAMP(V, MN, MX) ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
 
 void rlutMoveCursor(int x, int y) {
-    rlut.cursorX = RLUT_CLAMP(rlut.cursorX + x, 0, rlut.screenW-1);
-    rlut.cursorY = RLUT_CLAMP(rlut.cursorY + y, 0, rlut.screenH-1);
+    int dy = rlut.cursorY + y;
+    rlut.cursorY = RLUT_CLAMP(dy, 0, rlut.screenH - 1);
+    int dx = rlut.cursorX + x;
+    if (dx < 0) {
+        // Underflow, wrap backwards to previous line unless on first line
+        if (rlut.cursorY == 0)
+            rlut.cursorX = 0;
+        else {
+            rlut.cursorY--;
+            rlut.cursorX = rlut.screenW + dx;
+        }
+    }
+    else if (dx >= rlut.screenW) {
+        // Overflow, wrap forwards to next line unless on last line
+        if (rlut.cursorY == rlut.screenH - 1)
+            rlut.cursorX = rlut.screenW - 1;
+        else {
+            rlut.cursorY++;
+            rlut.cursorX = dx - rlut.screenW;
+        }
+    } else
+        rlut.cursorX = dx; // No wrapping needed
 }
 
+// Coordinates set with SetCursor won't be wrapped but will be clamped to
+// the screen bounds.
 void rlutSetCursor(unsigned int x, unsigned int y) {
     rlut.cursorX = RLUT_MIN(rlut.screenW-1, x);
     rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
+}
+
+static void rlutAdvance(void) {
+    rlutMoveCursor(+1, 0);
 }
 
 void rlutScreenSize(unsigned int *width, unsigned int *height) {
@@ -202,51 +247,73 @@ void rlutCursorPosition(unsigned int *x, unsigned int *y) {
 union Cell{
     struct {
         uint8_t ch;
-        uint8_t fgR;
-        uint8_t fgG;
-        uint8_t fgB;
+        uint8_t fg;
+        uint8_t bg;
+        uint8_t mode;
     };
     uint32_t value;
 };
 
-void rlutPrintChar(uint8_t ch, uint8_t fgR, uint8_t fgG, uint8_t fgB) {
+void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
     assert(rlut.cursorX >= 0 && rlut.cursorY >= 0 && rlut.cursorX < rlut.screenW && rlut.cursorY < rlut.screenH);
-    
     Cell cell = {
         .ch = ch,
-        .fgR = fgR,
-        .fgG = fgG,
-        .fgB = fgB
+        .fg = fg,
+        .bg = bg,
+        .mode = mode
     };
     rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
-    if (rlut.disableCursorAdvance)
-        return;
-    if (++rlut.cursorX >= rlut.screenW) {
-        if (rlut.enableWrapCursor) {
-            rlut.cursorX = 0;
-            if (++rlut.cursorY >= rlut.screenH)
-                rlut.cursorY = 0;
-        } else
-            rlut.cursorX--;
-    }
+    rlutAdvance();
+}
+
+void ParseANSIEscape(const char *p, uint8_t *mode, uint8_t *fg, uint8_t *bg) {
+    // TODO: Parse ANSI ecsape codes
 }
 
 void rlutPrintString(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     std::stringstream ss;
-    int result = vsnprintf(NULL, 0, fmt, args);
-    std::vector<char> buffer(result + 1);
+    int length = vsnprintf(NULL, 0, fmt, args);
+    std::vector<char> buffer(length + 1);
     va_end(args);
     va_start(args, fmt);
     vsnprintf(buffer.data(), buffer.size(), fmt, args);
     va_end(args);
-    
-    ss << buffer.data();
-    std::string str = ss.str();
-    for (int i = 0; i < str.length(); i++) {
-        unsigned char ch = str[i];
-        // TODO: Parse ANSI escapes and write to buffer
+    std::string _str = ss.str();
+    const char *str = _str.c_str();
+
+    uint8_t textMode = 0;
+    uint8_t backgroundColor = 0;
+    uint8_t foregroundColor = 1;
+    for (const char *p = str; *p; p++) {
+        switch (*p) {
+            case '\a':
+                rlutBeep();
+                break;
+            case '\b':
+                rlutMoveCursor(-1, 0);
+                break;
+            case '\e':
+                ParseANSIEscape(p, &textMode, &foregroundColor, &backgroundColor);
+                break;
+            case '\n':
+                rlut.cursorX = 0;
+            case '\f':
+            case '\v':
+                if (rlut.cursorY != rlut.screenH - 1)
+                    rlut.cursorY++;
+                break;
+            case '\r':
+                rlut.cursorX = 0;
+                break;
+            case '\t':
+                rlutMoveCursor((rlut.cursorX + 7) & ~7, 0);
+                break;
+            default:
+                rlutPrintChar(*p, textMode, foregroundColor, backgroundColor);
+                break;
+        }
     }
 }
 

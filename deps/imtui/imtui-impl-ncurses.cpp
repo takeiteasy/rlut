@@ -329,7 +329,8 @@ void ImTui_ImplNcurses_DrawScreen(bool active) {
             if (lastp != (int) p) {
                 if (curs.size() > 0) {
                     curs[ic] = 0;
-                    addstr((char *) curs.data());
+                    if (curs[0] != '\0')
+                        addstr((char *) curs.data());
                     ic = 0;
                     curs[0] = 0;
                 }
