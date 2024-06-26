@@ -1,6 +1,29 @@
 # RLUT
 
-**R**ogue-**L**ike **U**tilities **T**oolkit
+> [!WARNING]
+> Work in progress!
+
+**R**ogue-**L**ike **U**tilities **T**oolkit is a minimal + lightweight framework with most of the basic necessities to make a rogue-like game.
+
+## Features
+
+- [X] Simple API to read, use and bind to another language
+- [X] Window creation + event handling
+    - [X] NCurses (TUI)
+    - [ ] SDL2 (GUI) ```TODO```
+- [X] NCurses-like cursor + print functions
+- [X] Map generation functions
+    - [X] Cellular automata (caves)
+    - [X] Perlin + FBM (islands or overword)
+    - [ ] More map generators ...
+- [X] Random number generation functions
+- [ ] AStar pathfinding (w/ or w/o diagonals) ```TODO```
+- [ ] Poisson disc sampling ```TODO```
+- [ ] Entity FOV calculation function ```TODO```
+
+## Preview
+
+```TODO```
 
 ## LICENSE
 ```
