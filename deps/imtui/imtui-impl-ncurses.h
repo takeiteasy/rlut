@@ -22,6 +22,6 @@ void ImTui_ImplNcurses_Shutdown();
 bool ImTui_ImplNcurses_NewFrame();
 
 // active - specify which redraw rate to use: fps_active or fps_idle
-void ImTui_ImplNcurses_DrawScreen(bool active = true);
+void ImTui_ImplNcurses_UpdateScreen(bool active = true);
 
 bool ImTui_ImplNcurses_ProcessEvent();

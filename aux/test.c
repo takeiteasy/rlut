@@ -51,7 +51,7 @@ static void display(void) {
 int main(int argc, const char *argv[]) {
     if (!rlutInit(argc, argv))
         abort();
-    rlutPrintString("\x1b[1;31m\tTEST!\x1b[0m");
+//    rlutPrintString("\x1b[1;31m\tTEST!\x1b[0m");
     rlutDisplayFunc(display);
     return rlutMainLoop();
 }

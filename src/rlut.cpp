@@ -55,7 +55,7 @@ inline std::uint8_t operator "" _u8(unsigned long long value) {
 #define CLAMP(V, MN, MX) (std::min(std::max((V), (MN)), (MN)))
 
 static struct {
-    ImTui::TScreen* screen;
+    ImTui::TScreen* tuiScreen;
     void(*displayFunc)(void);
     void(*preframeFunc)(void);
     void(*postframeFunc)(void);
@@ -75,7 +75,7 @@ static struct {
 int rlutInit(int argc, const char *argv[]) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    rlut.screen = ImTui_ImplNcurses_Init(true);
+    rlut.tuiScreen = ImTui_ImplNcurses_Init(true);
     ImTui_ImplText_Init();
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
     rlutClearScreen();
@@ -163,18 +163,49 @@ int rlutMainLoop(void) {
         
         rlut.displayFunc();
         
+        wrefresh(stdscr);
+        rlutClearScreen();
+        
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::Begin("test");
         ImGui::Text("Hello, world!");
         ImGui::End();
         
         ImGui::Render();
-        ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.screen);
-        ImTui_ImplNcurses_DrawScreen();
+        ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.tuiScreen);
+        ImTui_ImplNcurses_UpdateScreen();
         
-        init_pair(1, COLOR_BLACK, COLOR_RED);
-        attron(COLOR_PAIR(1));
-        mvprintw(0, 0, "test\n");
-
+        const char *test = "test!";
+        int y = 2, x = 5;
+        for (char *p = (char*)test; *p; p++) {
+            Cell tmp = {
+                .ch = static_cast<uint8_t>(*p),
+                .fg = 0,
+                .bg = 0,
+                .mode = 0
+            };
+            rlut.screenBuffer[y][x++] = tmp.value;
+        }
+        
+        // Copy ImTui screen buffer to RLUT's screen buffer
+        for (int y = 0; y < rlut.screenH; y++)
+            for (int x = 0; x < rlut.screenW; x++) {
+                ImTui::TCell *tcell = &rlut.tuiScreen->data[y * rlut.screenW + x];
+                uint16_t f = (*tcell & 0x00FF0000) >> 16;
+                uint16_t b = (*tcell & 0xFF000000) >> 24;
+                uint16_t c =  *tcell & 0x0000FFFF;
+                
+                if ((f > 0 || b > 0) && c > 0)
+                    mvaddch(y, x, c);
+                else {
+                    Cell cell = { .value = rlut.screenBuffer[y][x] };
+                    if (cell.ch)
+                        mvaddch(y, x, cell.ch);
+                    else
+                        mvaddch(y, x, ' ');
+                }
+            }
+        
         if (rlut.postframeFunc)
             rlut.postframeFunc();
     }
@@ -250,8 +281,8 @@ void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
     assert(rlut.cursorX >= 0 && rlut.cursorY >= 0 && rlut.cursorX < rlut.screenW && rlut.cursorY < rlut.screenH);
     Cell cell = {
         .ch = ch,
-        .fg = CLAMP(fg, 0_u8, 9_u8),
-        .bg   = CLAMP(bg, 0_u8, 9_u8),
+        .fg = fg,
+        .bg = bg,
         .mode = CLAMP(mode, 0_u8, 9_u8)
     };
     rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
@@ -418,7 +449,7 @@ static char* ParseANSIEscape(char *_p) {
                                 ClearLineToCursor();
                                 for (int y = 0; y < rlut.cursorY; y++)
                                     ClearLine(y);
-                                    break;
+                                break;
                             case 3: // Same as 2, but deletes scrollback buffer (we have no scrollback buffer)
                             case 2: // Clear entire screen and move cursor to 0,0
                                 rlutClearScreen();
@@ -557,8 +588,8 @@ void rlutBeep(void) {
     int fd = open("/dev/console", O_WRONLY);
     if (fd == -1)
         return;
-    unsigned int value = (750 << 16) | 250;
-    int ret = ioctl(fd, KIOCSOUND, &value);
+    unsigned int v = (750 << 16) | 250;
+    ioctl(fd, KIOCSOUND, &v);
     close(fd);
 #endif
 }

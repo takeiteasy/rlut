@@ -90,6 +90,7 @@ namespace {
 
 static VSync g_vsync;
 static ImTui::TScreen * g_screen = nullptr;
+static int nActiveFrames = 10;
 
 ImTui::TScreen * ImTui_ImplNcurses_Init(bool mouseSupport, float fps_active, float fps_idle) {
     if (g_screen == nullptr) {
@@ -274,90 +275,9 @@ bool ImTui_ImplNcurses_NewFrame() {
     return hasInput;
 }
 
-// state
-static int nColPairs = 1;
-static int nActiveFrames = 10;
-static ImTui::TScreen screenPrev;
-static std::vector<uint8_t> curs;
-static std::array<std::pair<bool, int>, 256*256> colPairs;
-
-void ImTui_ImplNcurses_DrawScreen(bool active) {
-    if (active) nActiveFrames = 10;
-
-    wrefresh(stdscr);
-
-    int nx = g_screen->nx;
-    int ny = g_screen->ny;
-
-    bool compare = true;
-
-    if (screenPrev.nx != nx || screenPrev.ny != ny) {
-        screenPrev.resize(nx, ny);
-        compare = false;
-    }
-
-    int ic = 0;
-    curs.resize(nx + 1);
-
-    for (int y = 0; y < ny; ++y) {
-        bool isSame = compare;
-        if (compare) {
-            for (int x = 0; x < nx; ++x) {
-                if (screenPrev.data[y*nx + x] != g_screen->data[y*nx + x]) {
-                    isSame = false;
-                    break;
-                }
-            }
-        }
-        if (isSame) continue;
-
-        int lastp = 0xFFFFFFFF;
-        move(y, 0);
-        for (int x = 0; x < nx; ++x) {
-            const auto cell = g_screen->data[y*nx + x];
-            const uint16_t f = (cell & 0x00FF0000) >> 16;
-            const uint16_t b = (cell & 0xFF000000) >> 24;
-            const uint16_t p = b*256 + f;
-
-            if (colPairs[p].first == false) {
-                init_pair(nColPairs, f, b);
-                colPairs[p].first = true;
-                colPairs[p].second = nColPairs;
-                ++nColPairs;
-            }
-
-            if (lastp != (int) p) {
-                if (curs.size() > 0) {
-                    curs[ic] = 0;
-                    if (curs[0] != '\0')
-                        addstr((char *) curs.data());
-                    ic = 0;
-                    curs[0] = 0;
-                }
-                attron(COLOR_PAIR(colPairs[p].second));
-                lastp = p;
-            }
-
-            const uint16_t c = cell & 0x0000FFFF;
-            curs[ic++] = c > 0 ? c : ' ';
-        }
-
-        if (curs.size() > 0) {
-            curs[ic] = 0;
-            addstr((char *) curs.data());
-            ic = 0;
-            curs[0] = 0;
-        }
-
-        if (compare) {
-            memcpy(screenPrev.data + y*nx, g_screen->data + y*nx, nx*sizeof(ImTui::TCell));
-        }
-    }
-
-    if (!compare) {
-        memcpy(screenPrev.data, g_screen->data, nx*ny*sizeof(ImTui::TCell));
-    }
-
+void ImTui_ImplNcurses_UpdateScreen(bool active) {
+    if (active)
+        nActiveFrames = 10;
     g_vsync.wait(nActiveFrames --> 0);
 }
 
