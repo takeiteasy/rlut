@@ -36,8 +36,8 @@
 #include <vector>
 
 #define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
-#define RLUT_MAX(A, B)        (((A) >= (B)) ? (A) : (B))
-#define RLUT_CLAMP(V, MN, MX) ((V) < (MN) ? (MN) : (V) > (MX) ? (MX) : (V))
+#define RLUT_MAX(A, B)        (((A) > (B)) ? (A) : (B))
+#define RLUT_CLAMP(V, MN, MX) RLUT_MIN(RLUT_MAX((V), (MN)), (MX))
 
 #if defined(RLUT_SDL2)
 #if defined(_WIN32) || defined(_WIN64)
@@ -63,6 +63,7 @@ static struct {
     uint64_t seed;
     unsigned int screenW, screenH;
     unsigned int cursorX, cursorY;
+    unsigned int savedCursorX, savedCursorY;
     uint8_t textMode;
     uint8_t backgroundColor;
     uint8_t foregroundColor;
@@ -75,7 +76,7 @@ int rlutInit(int argc, const char *argv[]) {
     rlut.screen = ImTui_ImplNcurses_Init(true);
     ImTui_ImplText_Init();
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
-    rlutClear();
+    rlutClearScreen();
     rlutSetSeed(0);
     return 1;
 }
@@ -150,7 +151,7 @@ int rlutMainLoop(void) {
         
         rlut.textMode = 0;
         rlut.backgroundColor = 0;
-        rlut.foregroundColor = 0;
+        rlut.foregroundColor = 7;
         
         if (rlut.preframeFunc)
             rlut.preframeFunc();
@@ -180,7 +181,7 @@ int rlutMainLoop(void) {
     return 0;
 }
 
-void rlutClear(void) {
+void rlutClearScreen(void) {
     rlut.screenBuffer.clear();
     rlut.screenBuffer.reserve(rlut.screenH);
     for (int y = 0; y < rlut.screenH; y++)
@@ -224,7 +225,7 @@ void rlutSetCursor(unsigned int x, unsigned int y) {
     rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
 }
 
-static void rlutAdvance(void) {
+void rlutAdvance(void) {
     rlutMoveCursor(+1, 0);
 }
 
@@ -256,11 +257,239 @@ void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
     rlutAdvance();
 }
 
-void ParseANSIEscape(const char *p, uint8_t *mode, uint8_t *fg, uint8_t *bg) {
-    // TODO: Parse ANSI ecsape codes
+// Attempt to read the next token in the ANSI escape sequence
+static bool ParseNextANSIEscapeToken(char *p, bool *isInteger, uint8_t *value, size_t *length) {
+    // Check if unexpected eol
+    if (!p || !*p)
+        return false;
+    bool isInt = true;
+    int i = 0;
+    char buf[3] = {0};
+    switch (*p) {
+        // First character is a number, attempt to read up to 3 digits (0-255)
+        case '0' ... '9': {
+            for (; i < 3; i++) {
+                char c = *(p + i);
+                if (c < '0' || c > '9') {
+                    if (c == ';' ||
+                        (c >= 'a' && c <= 'z') ||
+                        (c >= 'A' && c <= 'Z'))
+                        break;
+                    else
+                        return false; // error, invalid integer
+                }
+                // Valid integer, store in buffer
+                buf[i] = c;
+            }
+            break;
+        }
+        // Not a number, could be the mode
+        case 'a' ... 'z':
+        case 'A' ... 'Z':
+            buf[0] = *p;
+            i = 1;
+            isInt = false;
+            break;
+        // Not a-z, A-Z or 0-9 (invalid)
+        default:
+            return NULL; // error, invalid character
+    }
+    // Return token length, if it's an integer and the token value
+    if (length)
+        *length = i;
+    if (isInteger)
+        *isInteger = isInt;
+    if (value) {
+        if (isInt) {
+            int v = std::stoi(std::string(buf));
+            *value = static_cast<uint8_t>(RLUT_CLAMP(v, 0, UINT8_MAX));
+        } else
+            *value = *(char*)&buf;
+    }
+    return true;
+}
+
+// Attempt to parse an ANSI escape sequence
+static char* ParseANSIEscape(char *_p) {
+    // Check if the first character is valid and = '['
+    if (!_p || !*_p || *_p != '[')
+        return _p;
+    char *p = (char*)++_p;
+    int n = 0;
+    // Store values in this buffer, maximum of 4 tokens, the mode and up to 3 integer values
+    uint8_t tmp[4] = {0};
+    // Keeps track if the current token is an integer value or the mode, if it's the mode
+    // start to evaluate with the integer values (if any)
+    bool isInteger;
+    // Keep track of how far we have read into the string
+    size_t totalLength = 1, tokenLength = 0;
+    while (n < 4 && ParseNextANSIEscapeToken(p, &isInteger, &tmp[n], &tokenLength)) {
+        // If the token is an integer, check for a semi-colon delimeter and skip to
+        // the next token
+        if (isInteger) {
+            p += tokenLength;
+            totalLength += tokenLength;
+            char next = *p;
+            if ((next < 'a' && next > 'z') &&
+                (next < 'A' && next > 'Z') &&
+                next != ';') // error, expecting semi-colon delimeter
+                return _p;
+            if (next == ';')
+                p++;
+            n++;
+            continue; // next token
+        }
+        
+        // The token isn't an integer, check if it's a valid mode
+        switch (tmp[n]) {
+            case 'A': // Move cursor up
+                rlutMoveCursor(0, -1 * (n ? tmp[0] : 1));
+                break;
+            case 'B': // Move cursor down
+                rlutMoveCursor(0, +1 * (n ? tmp[0] : 1));
+                break;
+            case 'C': // Move cursor forward
+                rlutMoveCursor(+1 * (n ? tmp[0] : 1), 0);
+                break;
+            case 'D': // Move cursor back
+                rlutMoveCursor(-1 * (n ? tmp[0] : 1), 0);
+                break;
+            case 'E': { // Cursor next line
+                int dy = rlut.cursorY + 1 * (n ? tmp[0] : 1);
+                int mh = rlut.screenH - 1;
+                rlut.cursorY = RLUT_MAX(dy, mh);
+                rlut.cursorX = 0;
+                break;
+            }
+            case 'F': { // Cursor previous line
+                int dy = rlut.cursorY + -1 * (n ? tmp[0] : 1);
+                rlut.cursorY = RLUT_MAX(dy, 0);
+                rlut.cursorX = 0;
+                break;
+            }
+            case 'G': // Cursor horizontal absolute
+                rlutSetCursor(n ? tmp[0] : 0, rlut.cursorY);
+                break;
+            case 'H': // Cursor position
+                switch (n) {
+                    case 0:
+                        rlutSetCursor(0, 0);
+                        break;
+                    case 1:
+                        rlutSetCursor(tmp[0], rlut.cursorY);
+                        break;
+                    default:
+                    case 2:
+                        rlutSetCursor(tmp[0], tmp[1]);
+                        break;
+                }
+                break;
+            case 'J': { // Erase in Display
+                int mode = 0;
+                switch (n) {
+                    default:
+                    case 1:
+                        mode = tmp[0];
+                    case 0:
+                        switch (mode) {
+                            case 0: // Clear cursor to end of screen
+                                for (int x = rlut.cursorX; x < rlut.screenW - 1; x++)
+                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                for (int y = rlut.cursorY; y < rlut.screenH - 1; y++)
+                                    std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
+                                break;
+                            case 1: // Clear from cursor to beginning of screen
+                                for (int x = 0; x < rlut.cursorX; x++)
+                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                for (int y = 0; y < rlut.cursorY; y++)
+                                    std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
+                                break;
+                            case 3: // Same as 2, but deletes scrollback buffer (we have no scrollback buffer)
+                            case 2: // Clear entire screen and move cursor to 0,0
+                                rlutClearScreen();
+                                rlutSetCursor(0, 0);
+                                break;
+                            default: // error, invalid mode
+                                return _p;
+                        }
+                        break;
+                }
+                break;
+            }
+            case 'K': { // Erase in Line
+                int mode = 0;
+                switch (n) {
+                    default:
+                    case 1:
+                        mode = tmp[0];
+                    case 0:
+                        switch (mode) {
+                            case 0: // clear from cursor to eol
+                                for (int x = rlut.cursorX; x < rlut.screenW - 1; x++)
+                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                break;
+                            case 1: // clear from cursor to start of line
+                                for (int x = 0; x < rlut.cursorX; x++)
+                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                break;
+                            case 2: // clear the entire line
+                                std::fill(rlut.screenBuffer[rlut.cursorY].begin(), rlut.screenBuffer[rlut.cursorY].end(), 0);
+                                break;
+                            default: // error, invalid mode
+                                return _p;
+                        }
+                        break;
+                }
+                break;
+            }
+            case 'm': // Select Graphic Rendition
+                switch (n) {
+                    case 1:
+                        if (tmp[0] > 0)
+                            break;
+                    case 0:
+                        rlut.textMode = 0;
+                        rlut.backgroundColor = 0;
+                        rlut.foregroundColor = 7;
+                        break;
+                    default:
+                        for (int i = 0; i < RLUT_MIN(n, 4); i++)
+                            switch (tmp[i]) {
+                                case 0 ... 9: // Text modes
+                                    rlut.textMode = tmp[i];
+                                    break;
+                                case 30 ... 39: // Foreground colors
+                                    rlut.foregroundColor = tmp[i] - 30;
+                                    break;
+                                case 40 ... 49: // Background colors
+                                    rlut.backgroundColor = tmp[i] - 40;
+                                    break;
+                                default: // Unsupported, skip
+                                    return _p;
+                            }
+                        break;
+                }
+                break;
+            case 'n': // Device Status Report
+            case 's': // Save Current Cursor Position
+                rlut.savedCursorX = rlut.cursorX;
+                rlut.savedCursorY = rlut.cursorY;
+                break;
+            case 'u': // Restore Saved Cursor Position
+                rlut.cursorX = rlut.savedCursorX;
+                rlut.cursorY = rlut.savedCursorY;
+                break;
+            default: // error, invalid mode
+                return _p;
+        }
+        // Valid mode, break out of loop and return adjusted pointer
+        break;
+    }
+    return _p + totalLength + tokenLength;
 }
 
 void rlutPrintString(const char *fmt, ...) {
+    // Format a string into a buffer
     va_list args;
     va_start(args, fmt);
     std::stringstream ss;
@@ -270,30 +499,33 @@ void rlutPrintString(const char *fmt, ...) {
     va_start(args, fmt);
     vsnprintf(buffer.data(), buffer.size(), fmt, args);
     va_end(args);
+    ss << buffer.data();
     std::string str = ss.str();
-    
-    for (const char *p = str.c_str(); *p; p++) {
+    // Loop through string and parse any ANSI escapes and control codes
+    const char *_p = str.c_str();
+    char *p = (char*)_p;
+    for (; *p; p++) {
         switch (*p) {
-            case '\a':
+            case '\a': // Bell
                 rlutBeep();
                 break;
-            case '\b':
+            case '\b': // Backspace
                 rlutMoveCursor(-1, 0);
                 break;
-            case '\e':
-                ParseANSIEscape(p, &rlut.textMode, &rlut.foregroundColor, &rlut.backgroundColor);
+            case '\e': // Escape sequence
+                p = ParseANSIEscape(p + 1);
                 break;
-            case '\n':
+            case '\n': // Line Feed
                 rlut.cursorX = 0;
             case '\f':
-            case '\v':
+            case '\v': // Form feed + Vertical tab
                 if (rlut.cursorY != rlut.screenH - 1)
                     rlut.cursorY++;
                 break;
-            case '\r':
+            case '\r': // Carriage Return
                 rlut.cursorX = 0;
                 break;
-            case '\t':
+            case '\t': // Tab
                 if (rlut.cursorX == rlut.screenW - 1) {
                     if (rlut.cursorY != rlut.screenH - 1) {
                         rlut.cursorY++;
@@ -307,6 +539,7 @@ void rlutPrintString(const char *fmt, ...) {
                         rlut.cursorX = dx;
                 }
                 break;
+            // Not an escape or control code, probably a character, print it
             default:
                 rlutPrintChar(*p, rlut.textMode, rlut.foregroundColor, rlut.backgroundColor);
                 break;
@@ -352,7 +585,7 @@ float rlutRandomFloat(void) {
 int rlutRandomIntRange(int min, int max) {
     if (min > max)
         std::swap(min, max);
-    return static_cast<int>(rlutRandomFloat() * (max - min + 1)) + min;
+    return static_cast<int>(rlutRandomFloat() * (max - min + 1) + min);
 }
 
 float rlutRandomFloatRange(float min, float max) {
