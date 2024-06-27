@@ -39,6 +39,30 @@ extern "C" {
 #define RLUT_FREE free
 #endif
 
+enum {
+    RLUT_RESET_MODE = 0,
+    RLUT_BOLD_MODE,
+    RLUT_DIM_MODE,
+    RLUT_ITALIC_MODE,
+    RLUT_UNDERLINE_MODE,
+    RLUT_BLINKING_MODE,
+    RLUT_INVERSE_MODE,
+    RLUT_HIDDEN_MODE,
+    RLUT_STRIKETHRU_MODE
+};
+
+enum {
+    RLUT_COLOR_BLACK = 0,
+    RLUT_COLOR_RED,
+    RLUT_COLOR_GREEN,
+    RLUT_COLOR_YELLOW,
+    RLUT_COLOR_BLUE,
+    RLUT_COLOR_MAGENTA,
+    RLUT_COLOR_CYAN,
+    RLUT_COLOR_WHITE,
+    RLUT_COLOR_DEFAULT
+};
+
 // TODO: Input + event handling + forwarding
 // TODO: Update ImGUI to v1.84 + generate C wrapper
 // TODO: A*, Poisson disc sampling, FOV functions

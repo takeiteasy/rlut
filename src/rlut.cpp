@@ -35,10 +35,6 @@
 #include <sstream>
 #include <vector>
 
-#define RLUT_MIN(A, B)        (((A) < (B)) ? (A) : (B))
-#define RLUT_MAX(A, B)        (((A) > (B)) ? (A) : (B))
-#define RLUT_CLAMP(V, MN, MX) RLUT_MIN(RLUT_MAX((V), (MN)), (MX))
-
 #if defined(RLUT_SDL2)
 #if defined(_WIN32) || defined(_WIN64)
 #define RLUT_WINDOWS
@@ -51,6 +47,12 @@
 #include <unistd.h>
 #endif
 #endif
+
+inline std::uint8_t operator "" _u8(unsigned long long value) {
+    return static_cast<std::uint8_t>(value);
+}
+
+#define CLAMP(V, MN, MX) (std::min(std::max((V), (MN)), (MN)))
 
 static struct {
     ImTui::TScreen* screen;
@@ -195,7 +197,7 @@ void rlutClearScreen(void) {
 void rlutMoveCursor(int x, int y) {
     if (y != 0) {
         int dy = rlut.cursorY + y;
-        rlut.cursorY = RLUT_CLAMP(dy, 0, rlut.screenH - 1);
+        rlut.cursorY = CLAMP(dy, 0, rlut.screenH - 1);
     }
     if (x != 0) {
         int dx = rlut.cursorX + x;
@@ -224,8 +226,8 @@ void rlutMoveCursor(int x, int y) {
 // NOTE: Coordinates set with SetCursor won't be wrapped but will be clamped to
 //       the screen bounds.
 void rlutSetCursor(unsigned int x, unsigned int y) {
-    rlut.cursorX = RLUT_MIN(rlut.screenW-1, x);
-    rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
+    rlut.cursorX = std::min(rlut.screenW-1, x);
+    rlut.cursorY = std::min(rlut.screenH-1, y);
 }
 
 void rlutScreenSize(unsigned int *width, unsigned int *height) {
@@ -248,9 +250,9 @@ void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
     assert(rlut.cursorX >= 0 && rlut.cursorY >= 0 && rlut.cursorX < rlut.screenW && rlut.cursorY < rlut.screenH);
     Cell cell = {
         .ch = ch,
-        .fg = fg,
-        .bg = bg,
-        .mode = mode
+        .fg = CLAMP(fg, 0_u8, 9_u8),
+        .bg   = CLAMP(bg, 0_u8, 9_u8),
+        .mode = CLAMP(mode, 0_u8, 9_u8)
     };
     rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
     rlutMoveCursor(+1, 0);
@@ -372,13 +374,13 @@ static char* ParseANSIEscape(char *_p) {
             case 'E': { // Cursor next line
                 int dy = rlut.cursorY + 1 * (n ? tmp[0] : 1);
                 int mh = rlut.screenH - 1;
-                rlut.cursorY = RLUT_MAX(dy, mh);
+                rlut.cursorY = std::max(dy, mh);
                 rlut.cursorX = 0;
                 break;
             }
             case 'F': { // Cursor previous line
                 int dy = rlut.cursorY + -1 * (n ? tmp[0] : 1);
-                rlut.cursorY = RLUT_MAX(dy, 0);
+                rlut.cursorY = std::max(dy, 0);
                 rlut.cursorX = 0;
                 break;
             }
@@ -454,30 +456,24 @@ static char* ParseANSIEscape(char *_p) {
                 break;
             }
             case 'm': // Select Graphic Rendition
-                switch (n) {
-                    case 1:
-                        if (tmp[0] > 0)
-                            break;
-                    case 0:
-                        ResetTextStyle();
-                        break;
-                    default:
-                        for (int i = 0; i < RLUT_MIN(n, 4); i++)
-                            switch (tmp[i]) {
-                                case 0 ... 9: // Text modes
-                                    rlut.textMode = tmp[i];
-                                    break;
-                                case 30 ... 39: // Foreground colors
-                                    rlut.foregroundColor = tmp[i] - 30;
-                                    break;
-                                case 40 ... 49: // Background colors
-                                    rlut.backgroundColor = tmp[i] - 40;
-                                    break;
-                                default: // Unsupported, skip
-                                    return _p;
-                            }
-                        break;
-                }
+                if (!n)
+                    ResetTextStyle();
+                else
+                    for (int i = 0; i < std::min(n, 4); i++)
+                        switch (tmp[i]) {
+                            case 0 ... 9: // Text modes
+                                if (!(rlut.textMode = tmp[i]))
+                                    ResetTextStyle();
+                                break;
+                            case 30 ... 39: // Foreground colors
+                                rlut.foregroundColor = tmp[i] - 30;
+                                break;
+                            case 40 ... 49: // Background colors
+                                rlut.backgroundColor = tmp[i] - 40;
+                                break;
+                            default: // Unsupported, skip
+                                return _p;
+                        }
                 break;
             case 'n': // Device Status Report
             case 's': // Save Current Cursor Position
@@ -540,13 +536,8 @@ void rlutPrintString(const char *fmt, ...) {
                         rlut.cursorY++;
                         rlut.cursorX = 0;
                     }
-                } else {
-                    int dx = (rlut.cursorX + 7) & ~7;
-                    if (dx >= rlut.screenW)
-                        rlut.cursorX = rlut.screenW - 1;
-                    else
-                        rlut.cursorX = dx;
-                }
+                } else
+                    rlut.cursorX = std::min((rlut.cursorX + 7) & ~7, rlut.screenW - 1);
                 break;
             // Not an escape or control code, probably a character, print it
             default:
@@ -609,12 +600,12 @@ uint8_t* rlutCellularAutomataMap(unsigned int width, unsigned int height, unsign
     uint8_t *result = (uint8_t*)RLUT_MALLOC(sz);
     memset(result, 0, sz);
     // Randomly fill the grid
-    fillChance = RLUT_CLAMP(fillChance, 1, 99);
+    fillChance = CLAMP(fillChance, 1u, 99u);
     for (int x = 0; x < width; x++)
         for (int y = 0; y < height; y++)
             result[y * width + x] = rlutRandom() % 100 + 1 < fillChance;
     // Run cellular-automata on grid n times
-    for (int i = 0; i < smoothIterations; i++)
+    for (int i = 0; i < std::max(smoothIterations, 1u); i++)
         for (int x = 0; x < width; x++)
             for (int y = 0; y < height; y++) {
                 // Count the cell's living neighbours

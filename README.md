@@ -9,6 +9,14 @@ The name and API are based off GLUT. The idea and design of RLUT is a mixture of
 
 RLUT is designed to be built seemlessly as either a classic terminal process, or as a GUI application (SDL2) without having to change anything. ImGui is integrated into RLUT and works in both TUI and GUI builds (thanks to [ggerganov/imtui](https://github.com/ggerganov/imtui)).
 
+RLUT should be very easy to integrate into any other language. The source is C++ but the header is written to be compatible with C; so building RLUT as a dynamic library then linking to your C project (or any other lanuage via ffi) should be relatively pain free.
+
+See the [sample](#sample) or [build](#build) sections for more info, or see [here](/aux/test.c) for an example project.
+
+## Sample
+
+```TODO```
+
 ## Features
 
 - [X] Simple API to read, use and bind to another language
@@ -21,7 +29,7 @@ RLUT is designed to be built seemlessly as either a classic terminal process, or
     - [X] Perlin + FBM (islands or overword)
     - [ ] More map generators ...
 - [X] Random number generation functions
-- [ ] AStar pathfinding (w/ or w/o diagonals) ```TODO```
+- [ ] A\* pathfinding (w/ or w/o diagonals) ```TODO```
 - [ ] Poisson disc sampling ```TODO```
 - [ ] Entity FOV calculation function ```TODO```
 
@@ -29,7 +37,21 @@ RLUT is designed to be built seemlessly as either a classic terminal process, or
 
 ```TODO```
 
+## Build
+
+```TODO```
+
+## Dependencies
+
+- [ocornut/imgui](https://github.com/ocornut/imgui)
+- [ggerganov/imtui](https://github.com/ggerganov/imtui)
+- [libsdl-org/SDL](https://github.com/libsdl-org/SDL)*
+- [ncurses](https://invisible-island.net/ncurses/announce.html)*
+
+**\*** Not provided in this repo, must be built + linked from system
+
 ## LICENSE
+
 ```
 The MIT License (MIT)
 
@@ -53,5 +75,4 @@ IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
 CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
 ```
