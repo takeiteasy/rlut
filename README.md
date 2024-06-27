@@ -3,7 +3,11 @@
 > [!WARNING]
 > Work in progress!
 
-**R**ogue-**L**ike **U**tilities **T**oolkit is a minimal + lightweight framework with most of the basic necessities to make a rogue-like game.
+**R**ogue-**L**ike **U**tilities **T**oolkit is a minimal + lightweight framework with most of the basic necessities to make a rogue-like game (probably).
+
+The name and API are based off GLUT. The idea and design of RLUT is a mixture of GLUT and NCurses. RLUT doesn't handle any sort of game logic or map drawing; it just handling window + context creation, and rendering an NCurses-like screen buffer.
+
+RLUT is designed to be built seemlessly as either a classic terminal process, or as a GUI application (SDL2) without having to change anything. ImGui is integrated into RLUT and works in both TUI and GUI builds (thanks to [ggerganov/imtui](https://github.com/ggerganov/imtui)).
 
 ## Features
 

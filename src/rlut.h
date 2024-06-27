@@ -58,7 +58,6 @@ void rlutBeep(void);
 // Cursor + screen state functions
 void rlutClearScreen(void);
 void rlutMoveCursor(int x, int y);
-void rlutAdvance(void);
 void rlutSetCursor(unsigned int x, unsigned int y);
 void rlutScreenSize(unsigned int *width, unsigned int *height);
 void rlutCursorPosition(unsigned int *x, unsigned int *y);

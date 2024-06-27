@@ -140,6 +140,12 @@ union Cell {
     uint32_t value;
 };
 
+static void ResetTextStyle(void) {
+    rlut.textMode = 0;
+    rlut.backgroundColor = 0;
+    rlut.foregroundColor = 7;
+}
+
 int rlutMainLoop(void) {
     assert(rlut.displayFunc);
     rlut.running = true;
@@ -148,10 +154,7 @@ int rlutMainLoop(void) {
         ImTui_ImplText_NewFrame();
         ImGui::NewFrame();
         ResizeScreenBuffer();
-        
-        rlut.textMode = 0;
-        rlut.backgroundColor = 0;
-        rlut.foregroundColor = 7;
+        ResetTextStyle();
         
         if (rlut.preframeFunc)
             rlut.preframeFunc();
@@ -225,10 +228,6 @@ void rlutSetCursor(unsigned int x, unsigned int y) {
     rlut.cursorY = RLUT_MIN(rlut.screenH-1, y);
 }
 
-void rlutAdvance(void) {
-    rlutMoveCursor(+1, 0);
-}
-
 void rlutScreenSize(unsigned int *width, unsigned int *height) {
     unsigned int col, row;
     getmaxyx(stdscr, row, col);
@@ -254,7 +253,7 @@ void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
         .mode = mode
     };
     rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
-    rlutAdvance();
+    rlutMoveCursor(+1, 0);
 }
 
 // Attempt to read the next token in the ANSI escape sequence
@@ -292,7 +291,7 @@ static bool ParseNextANSIEscapeToken(char *p, bool *isInteger, uint8_t *value, s
             break;
         // Not a-z, A-Z or 0-9 (invalid)
         default:
-            return NULL; // error, invalid character
+            return false; // error, invalid character
     }
     // Return token length, if it's an integer and the token value
     if (length)
@@ -302,16 +301,32 @@ static bool ParseNextANSIEscapeToken(char *p, bool *isInteger, uint8_t *value, s
     if (value) {
         if (isInt) {
             int v = std::stoi(std::string(buf));
-            *value = static_cast<uint8_t>(RLUT_CLAMP(v, 0, UINT8_MAX));
+            if (v < 0 || v > UINT8_MAX)
+                return false;
+            *value = static_cast<uint8_t>(v);
         } else
             *value = *(char*)&buf;
     }
     return true;
 }
 
+static void ClearLineToEnd(void) {
+    for (int x = rlut.cursorX; x < rlut.screenW - 1; x++)
+        rlut.screenBuffer[rlut.cursorY][x] = 0;
+}
+
+static void ClearLineToCursor(void) {
+    for (int x = 0; x < rlut.cursorX; x++)
+        rlut.screenBuffer[rlut.cursorY][x] = 0;
+}
+
+static void ClearLine(int y) {
+    std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
+}
+
 // Attempt to parse an ANSI escape sequence
 static char* ParseANSIEscape(char *_p) {
-    // Check if the first character is valid and = '['
+    // Check if the first character is not null and = '['
     if (!_p || !*_p || *_p != '[')
         return _p;
     char *p = (char*)++_p;
@@ -393,17 +408,15 @@ static char* ParseANSIEscape(char *_p) {
                     case 0:
                         switch (mode) {
                             case 0: // Clear cursor to end of screen
-                                for (int x = rlut.cursorX; x < rlut.screenW - 1; x++)
-                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                ClearLineToEnd();
                                 for (int y = rlut.cursorY; y < rlut.screenH - 1; y++)
-                                    std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
+                                    ClearLine(y);
                                 break;
                             case 1: // Clear from cursor to beginning of screen
-                                for (int x = 0; x < rlut.cursorX; x++)
-                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                ClearLineToCursor();
                                 for (int y = 0; y < rlut.cursorY; y++)
-                                    std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
-                                break;
+                                    ClearLine(y);
+                                    break;
                             case 3: // Same as 2, but deletes scrollback buffer (we have no scrollback buffer)
                             case 2: // Clear entire screen and move cursor to 0,0
                                 rlutClearScreen();
@@ -425,15 +438,13 @@ static char* ParseANSIEscape(char *_p) {
                     case 0:
                         switch (mode) {
                             case 0: // clear from cursor to eol
-                                for (int x = rlut.cursorX; x < rlut.screenW - 1; x++)
-                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                ClearLineToEnd();
                                 break;
                             case 1: // clear from cursor to start of line
-                                for (int x = 0; x < rlut.cursorX; x++)
-                                    rlut.screenBuffer[rlut.cursorY][x] = 0;
+                                ClearLineToCursor();
                                 break;
                             case 2: // clear the entire line
-                                std::fill(rlut.screenBuffer[rlut.cursorY].begin(), rlut.screenBuffer[rlut.cursorY].end(), 0);
+                                ClearLine(rlut.cursorY);
                                 break;
                             default: // error, invalid mode
                                 return _p;
@@ -448,9 +459,7 @@ static char* ParseANSIEscape(char *_p) {
                         if (tmp[0] > 0)
                             break;
                     case 0:
-                        rlut.textMode = 0;
-                        rlut.backgroundColor = 0;
-                        rlut.foregroundColor = 7;
+                        ResetTextStyle();
                         break;
                     default:
                         for (int i = 0; i < RLUT_MIN(n, 4); i++)
@@ -489,7 +498,7 @@ static char* ParseANSIEscape(char *_p) {
 }
 
 void rlutPrintString(const char *fmt, ...) {
-    // Format a string into a buffer
+    // Format a string into a string buffer
     va_list args;
     va_start(args, fmt);
     std::stringstream ss;
