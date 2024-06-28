@@ -202,27 +202,62 @@ int rlutMainLoop(void) {
             rlut.screenBuffer[y][x++] = tmp.value;
         }
         
-        for (int y = 0; y < rlut.screenH; y++)
+        // Keep a 256*256 grid to keep track of all possible ANSI color pairs
+        // Each pair has to be created with an index. If this index is used in
+        // another piece of text and the colors of that pair are later changed,
+        // all text with that color pair index will change too.
+        static int colPairsIndex = 0, lastPairsIndex = -1;
+        static std::array<std::pair<bool, int>, 256*256> colPairs;
+        for (int y = 0; y < rlut.screenH; y++) {
+            // The current row's buffer. Will be flushed either at the end of the
+            // row or when there is a color change.
+            std::string row = "";
             for (int x = 0; x < rlut.screenW; x++) {
+                // First check ImTui's screen buffer
                 ImTui::TCell *tcell = &rlut.tuiScreen->data[y * rlut.screenW + x];
                 uint16_t f = (*tcell & 0x00FF0000) >> 16;
                 uint16_t b = (*tcell & 0xFF000000) >> 24;
                 uint16_t c =  *tcell & 0x0000FFFF;
-                
-                if ((f > 0 || b > 0) && c > 0)
-                    mvaddch(y, x, c);
-                else {
-                    Cell cell = { .value = rlut.screenBuffer[y][x] };
-                    if (cell.ch)
-                        mvaddch(y, x, cell.ch);
-                    else
-                        mvaddch(y, x, ' ');
+                // If ImTui's cell isn't empty or uncoloured use it, otherwise
+                // use the cell from RLUT's screen buffer. ImTui's windows will
+                // always take precidence since they're drawn over the main window
+                Cell cell;
+                if ((f > 0 || b > 0) && c > 0) {
+                    cell.ch = static_cast<uint8_t>(c);
+                    cell.fg = static_cast<uint8_t>(f);
+                    cell.bg = static_cast<uint8_t>(b);
+                } else
+                    cell.value = rlut.screenBuffer[y][x];
+                // Find the corrosponding color pair from the colPairs matrix
+                // and see if it has been initialized yet. If not, create the
+                // pair and update the pairs matrix
+                uint16_t p = cell.bg * 256 + cell.fg;
+                if (!colPairs[p].first) {
+                    init_pair(colPairsIndex, cell.fg, cell.bg);
+                    colPairs[p] = std::pair<bool, int>(true, colPairsIndex++);
                 }
+                // Check if the color pairing is different to the current pair
+                // Add the row buffer to the screen and clear
+                if (lastPairsIndex != p) {
+                    if (!row.empty()) {
+                        addstr(row.data());
+                        row.clear();
+                    }
+                    // Enable the new color pair
+                    attron(COLOR_PAIR(colPairs[p].second));
+                    lastPairsIndex = p;
+                }
+                // Append the cell's character to the row buffer
+                row.push_back(cell.ch);
             }
-        
-        if (rlut.postframeFunc)
-            rlut.postframeFunc();
+            // If there is anything in the row buffer remaining, flush it
+            if (!row.empty())
+                addstr(row.data());
+        }
     }
+    
+    if (rlut.postframeFunc)
+        rlut.postframeFunc();
     
     if (rlut.atExitFunc)
         rlut.atExitFunc();
