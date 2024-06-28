@@ -56,12 +56,12 @@ inline std::uint8_t operator "" _u8(unsigned long long value) {
 
 static struct {
     ImTui::TScreen* tuiScreen;
-    void(*displayFunc)(void);
-    void(*preframeFunc)(void);
-    void(*postframeFunc)(void);
-    void(*reshapeFunc)(int, int);
-    void(*atExitFunc)(void);
-    bool running;
+    void(*displayFunc)(void)     = NULL;
+    void(*preframeFunc)(void)    = NULL;
+    void(*postframeFunc)(void)   = NULL;
+    void(*reshapeFunc)(int, int) = NULL;
+    void(*atExitFunc)(void)      = NULL;
+    bool running = false;
     uint64_t seed;
     unsigned int screenW, screenH;
     unsigned int cursorX, cursorY;
@@ -69,8 +69,23 @@ static struct {
     uint8_t textMode;
     uint8_t backgroundColor;
     uint8_t foregroundColor;
-    std::vector<std::vector<uint32_t>> screenBuffer;
-} rlut = {0};
+    std::vector<std::vector<uint32_t>> screenBuffer = {{0}};
+    std::array<int, RLUT_HINT_LAST+1> hints = {
+        7,   // RLUT_HINT_DEFAULT_FOREGROUND_COLOR
+        0,   // RLUT_HINT_DEFAULT_BACKGROUND_COLOR
+        640, // RLUT_HINT_WINDOW_WIDTH
+        480, // RLUT_HINT_WINDOW_HEIGHT
+        0,   // RLUT_HINT_DISABLE_TEXT_WRAP
+        0,   // RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE
+        0    // RLUT_HINT_INITIAL_SEED
+    };
+} rlut;
+
+static void ResetTextStyle(void) {
+    rlut.textMode = 0;
+    rlut.backgroundColor = rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR];
+    rlut.foregroundColor = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
+}
 
 int rlutInit(int argc, const char *argv[]) {
     IMGUI_CHECKVERSION();
@@ -79,8 +94,14 @@ int rlutInit(int argc, const char *argv[]) {
     ImTui_ImplText_Init();
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
     rlutClearScreen();
-    rlutSetSeed(0);
+    rlutSetSeed(rlut.hints[RLUT_HINT_INITIAL_SEED]);
+    ResetTextStyle();
     return 1;
+}
+
+void rlutSetHint(unsigned int key, int val) {
+    if (key < rlut.hints.size())
+        rlut.hints[key] = val;
 }
 
 void rlutDisplayFunc(void(*func)(void)) {
@@ -142,12 +163,6 @@ union Cell {
     uint32_t value;
 };
 
-static void ResetTextStyle(void) {
-    rlut.textMode = 0;
-    rlut.backgroundColor = 0;
-    rlut.foregroundColor = 7;
-}
-
 int rlutMainLoop(void) {
     assert(rlut.displayFunc);
     rlut.running = true;
@@ -187,7 +202,6 @@ int rlutMainLoop(void) {
             rlut.screenBuffer[y][x++] = tmp.value;
         }
         
-        // Copy ImTui screen buffer to RLUT's screen buffer
         for (int y = 0; y < rlut.screenH; y++)
             for (int x = 0; x < rlut.screenW; x++) {
                 ImTui::TCell *tcell = &rlut.tuiScreen->data[y * rlut.screenW + x];
@@ -228,29 +242,41 @@ void rlutClearScreen(void) {
 void rlutMoveCursor(int x, int y) {
     if (y != 0) {
         int dy = rlut.cursorY + y;
-        rlut.cursorY = CLAMP(dy, 0, rlut.screenH - 1);
+        if (rlut.hints[RLUT_HINT_ENABLE_Y_WRAP]) {
+            if (dy < 0) // Underflow, wrap from top to bottom
+                rlut.cursorY = (rlut.screenH - 1) + dy;
+            else if (dy >= rlut.screenH) // Overflow, wrap from bottom to top
+                rlut.cursorY = dy - rlut.screenH;
+            else // No wrapping needed
+                rlut.cursorY = dy;
+        } else
+            rlut.cursorY = CLAMP(dy, 0, rlut.screenH - 1);
     }
     if (x != 0) {
         int dx = rlut.cursorX + x;
-        if (dx < 0) {
-            // Underflow, wrap backwards to previous line unless on first line
-            if (rlut.cursorY == 0)
-                rlut.cursorX = 0;
-            else {
-                rlut.cursorY--;
-                rlut.cursorX = rlut.screenW + dx;
+        if (rlut.hints[RLUT_HINT_DISABLE_TEXT_WRAP])
+            rlut.cursorX = CLAMP(dx, 0, rlut.screenW - 1);
+        else {
+            if (dx < 0) {
+                // Underflow, wrap backwards to previous line unless on first line
+                if (rlut.cursorY == 0)
+                    rlut.cursorX = 0;
+                else {
+                    rlut.cursorY--;
+                    rlut.cursorX = rlut.screenW + dx;
+                }
             }
+            else if (dx >= rlut.screenW) {
+                // Overflow, wrap forwards to next line unless on last line
+                if (rlut.cursorY == rlut.screenH - 1)
+                    rlut.cursorX = rlut.screenW - 1;
+                else {
+                    rlut.cursorY++;
+                    rlut.cursorX = dx - rlut.screenW;
+                }
+            } else
+                rlut.cursorX = dx; // No wrapping needed
         }
-        else if (dx >= rlut.screenW) {
-            // Overflow, wrap forwards to next line unless on last line
-            if (rlut.cursorY == rlut.screenH - 1)
-                rlut.cursorX = rlut.screenW - 1;
-            else {
-                rlut.cursorY++;
-                rlut.cursorX = dx - rlut.screenW;
-            }
-        } else
-            rlut.cursorX = dx; // No wrapping needed
     }
 }
 
@@ -286,7 +312,8 @@ void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t fg, uint8_t bg) {
         .mode = CLAMP(mode, 0_u8, 9_u8)
     };
     rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = cell.value;
-    rlutMoveCursor(+1, 0);
+    if (!rlut.hints[RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE])
+        rlutMoveCursor(+1, 0);
 }
 
 // Attempt to read the next token in the ANSI escape sequence
@@ -573,6 +600,8 @@ void rlutPrintString(const char *fmt, ...) {
             // Not an escape or control code, probably a character, print it
             default:
                 rlutPrintChar(*p, rlut.textMode, rlut.foregroundColor, rlut.backgroundColor);
+                if (rlut.hints[RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE])
+                    rlutMoveCursor(+1, 0);
                 break;
         }
     }
@@ -605,7 +634,7 @@ void rlutSetSeed(uint64_t seed) {
 
 uint64_t rlutRandom(void) {
     assert(rlut.running && rlut.seed);
-    rlut.seed = rlut.seed * 6364136223846793005ULL + 1;
+    rlutSetSeed(rlut.seed * 6364136223846793005ULL + 1);
     return rlut.seed;
 }
 

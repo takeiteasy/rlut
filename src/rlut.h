@@ -63,6 +63,19 @@ enum {
     RLUT_COLOR_DEFAULT
 };
 
+enum {
+    RLUT_HINT_DEFAULT_FOREGROUND_COLOR,
+    RLUT_HINT_DEFAULT_BACKGROUND_COLOR,
+    RLUT_HINT_WINDOW_WIDTH, // * GUI version only
+    RLUT_HINT_WINDOW_HEIGHT, // * GUI version only
+    RLUT_HINT_DISABLE_TEXT_WRAP,
+    RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE,
+    RLUT_HINT_ENABLE_Y_WRAP,
+    RLUT_HINT_INITIAL_SEED
+};
+
+#define RLUT_HINT_LAST RLUT_HINT_INITIAL_SEED
+
 // TODO: Input + event handling + forwarding
 // TODO: Update ImGUI to v1.84 + generate C wrapper
 // TODO: A*, Poisson disc sampling, FOV functions
@@ -70,6 +83,7 @@ enum {
 
 // Windows + context functions
 int rlutInit(int argc, const char *argv[]);
+void rlutSetHint(unsigned int key, int val);
 void rlutDisplayFunc(void(*func)(void));
 void rlutPreframeFunc(void(*func)(void));
 void rlutPostframeFunc(void(*func)(void));
