@@ -40,6 +40,7 @@ extern "C" {
 #endif
 
 enum {
+    RLUT_TEXT_DEFAULT = -1,
     RLUT_TEXT_RESET = 0,
     RLUT_TEXT_BOLD,
     RLUT_TEXT_DIM,
@@ -52,15 +53,15 @@ enum {
 };
 
 enum {
+    RLUT_COLOR_DEFAULT = 1,
     RLUT_COLOR_BLACK = 0,
-    RLUT_COLOR_RED,
-    RLUT_COLOR_GREEN,
-    RLUT_COLOR_YELLOW,
-    RLUT_COLOR_BLUE,
-    RLUT_COLOR_MAGENTA,
-    RLUT_COLOR_CYAN,
-    RLUT_COLOR_WHITE,
-    RLUT_COLOR_DEFAULT = 9
+    RLUT_COLOR_RED = 9,
+    RLUT_COLOR_GREEN = 10,
+    RLUT_COLOR_YELLOW = 11,
+    RLUT_COLOR_BLUE = 12,
+    RLUT_COLOR_MAGENTA = 13,
+    RLUT_COLOR_CYAN = 14,
+    RLUT_COLOR_WHITE = 15
 };
 
 enum {
@@ -71,19 +72,24 @@ enum {
     RLUT_HINT_DISABLE_TEXT_WRAP,
     RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE,
     RLUT_HINT_ENABLE_Y_WRAP,
+    RLUT_HINT_DISABLE_UTF8,
     RLUT_HINT_INITIAL_SEED
 };
 
 #define RLUT_HINT_LAST RLUT_HINT_INITIAL_SEED
 
+// TODO: Rewrite screen buffer resizing function
 // TODO: Text Modes (bold, italics)
 // TODO: Input + event handling + forwarding
 // TODO: Update ImGUI to v1.84 + generate C wrapper
 // TODO: A*, Poisson disc sampling, FOV functions
 // TODO: Alternate SDL GUI version (after TUI version is finished)
-// TODO: UTF-8 support
-// #include <locale.h>
-// setlocale(LC_ALL, "");
+// TODO: UTF-8 support to PrintChar + PrintString
+// TODO: Panel API
+//        - Panels are boxes that you can write text to like the main buffer
+//        - API will handle rendering + text-wrapping
+//        - Push/Pop immediate mode style
+// TODO: Build without ImGui/ImTui option
 
 // Windows + context functions
 int rlutInit(int argc, const char *argv[]);
@@ -103,7 +109,7 @@ void rlutMoveCursor(int x, int y);
 void rlutSetCursor(unsigned int x, unsigned int y);
 void rlutScreenSize(unsigned int *width, unsigned int *height);
 void rlutCursorPosition(unsigned int *x, unsigned int *y);
-void rlutPrintChar(uint8_t ch, uint8_t mode, uint8_t foregroundColor, uint8_t backgroundColor);
+void rlutPrintChar(uint32_t ch, int8_t mode, uint8_t foregroundColor, uint8_t backgroundColor);
 void rlutPrintString(const char *fmt, ...);
 
 // RNG + seed functions

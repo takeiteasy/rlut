@@ -45,11 +45,12 @@ static struct {
 } state;
 
 static void display(void) {
-    
+    rlutClearScreen();
+    rlutSetCursor(2, 5);
+    rlutPrintString("\x1b[42;31mtest!\x1b[0m");
 }
 
 int main(int argc, const char *argv[]) {
-    rlutSetHint(RLUT_HINT_DEFAULT_BACKGROUND_COLOR, RLUT_COLOR_RED);
     if (!rlutInit(argc, argv))
         abort();
     rlutDisplayFunc(display);

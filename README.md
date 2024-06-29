@@ -24,6 +24,7 @@ See the [sample](#sample) or [build](#build) sections for more info, or see [her
     - [X] NCurses (TUI)
     - [ ] SDL2 (GUI) ```TODO```
 - [X] NCurses-like cursor + print functions
+- [X] ANSI escape parser (90% coverage)
 - [X] Map generation functions
     - [X] Cellular automata (caves)
     - [X] Perlin + FBM (islands or overword)
