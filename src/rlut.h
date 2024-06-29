@@ -60,7 +60,7 @@ enum {
     RLUT_COLOR_MAGENTA,
     RLUT_COLOR_CYAN,
     RLUT_COLOR_WHITE,
-    RLUT_COLOR_DEFAULT
+    RLUT_COLOR_DEFAULT = 9
 };
 
 enum {
@@ -76,10 +76,14 @@ enum {
 
 #define RLUT_HINT_LAST RLUT_HINT_INITIAL_SEED
 
+// TODO: Text Modes (bold, italics)
 // TODO: Input + event handling + forwarding
 // TODO: Update ImGUI to v1.84 + generate C wrapper
 // TODO: A*, Poisson disc sampling, FOV functions
 // TODO: Alternate SDL GUI version (after TUI version is finished)
+// TODO: UTF-8 support
+// #include <locale.h>
+// setlocale(LC_ALL, "");
 
 // Windows + context functions
 int rlutInit(int argc, const char *argv[]);

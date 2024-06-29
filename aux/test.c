@@ -49,9 +49,9 @@ static void display(void) {
 }
 
 int main(int argc, const char *argv[]) {
+    rlutSetHint(RLUT_HINT_DEFAULT_BACKGROUND_COLOR, RLUT_COLOR_RED);
     if (!rlutInit(argc, argv))
         abort();
-//    rlutPrintString("\x1b[1;31m\tTEST!\x1b[0m");
     rlutDisplayFunc(display);
     return rlutMainLoop();
 }

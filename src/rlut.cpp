@@ -71,21 +71,15 @@ static struct {
     uint8_t foregroundColor;
     std::vector<std::vector<uint32_t>> screenBuffer = {{0}};
     std::array<int, RLUT_HINT_LAST+1> hints = {
-        7,   // RLUT_HINT_DEFAULT_FOREGROUND_COLOR
-        0,   // RLUT_HINT_DEFAULT_BACKGROUND_COLOR
-        640, // RLUT_HINT_WINDOW_WIDTH
-        480, // RLUT_HINT_WINDOW_HEIGHT
-        0,   // RLUT_HINT_DISABLE_TEXT_WRAP
-        0,   // RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE
-        0    // RLUT_HINT_INITIAL_SEED
+        RLUT_COLOR_WHITE,   // RLUT_HINT_DEFAULT_FOREGROUND_COLOR
+        RLUT_COLOR_BLACK,   // RLUT_HINT_DEFAULT_BACKGROUND_COLOR
+        640,                // RLUT_HINT_WINDOW_WIDTH
+        480,                // RLUT_HINT_WINDOW_HEIGHT
+        0,                  // RLUT_HINT_DISABLE_TEXT_WRAP
+        0,                  // RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE
+        0                   // RLUT_HINT_INITIAL_SEED
     };
 } rlut;
-
-static void ResetTextStyle(void) {
-    rlut.textMode = 0;
-    rlut.backgroundColor = rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR];
-    rlut.foregroundColor = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
-}
 
 int rlutInit(int argc, const char *argv[]) {
     IMGUI_CHECKVERSION();
@@ -95,7 +89,6 @@ int rlutInit(int argc, const char *argv[]) {
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
     rlutClearScreen();
     rlutSetSeed(rlut.hints[RLUT_HINT_INITIAL_SEED]);
-    ResetTextStyle();
     return 1;
 }
 
@@ -125,7 +118,7 @@ void rlutAtExit(void(*func)(void)) {
 }
 
 static void ResizeScreenBuffer(void) {
-    int lastW = rlut.screenW, lastH = rlut.screenH;
+    static int lastW = rlut.screenW, lastH = rlut.screenH;
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
     // Resize rows if height has changed
     if (rlut.screenH != lastH) {
@@ -137,13 +130,8 @@ static void ResizeScreenBuffer(void) {
     }
     // Resize columns if width has changed
     if (rlut.screenW != lastW)
-        for (int y = 0; y < rlut.screenH; y++) {
-            if (lastW > rlut.screenW)
-                rlut.screenBuffer[y].resize(rlut.screenW);
-            else
-                for (int i = 0; i < rlut.screenW - lastW; i++)
-                    rlut.screenBuffer[y].push_back(0);
-        }
+        for (int y = 0; y < rlut.screenH; y++)
+            rlut.screenBuffer[y].resize(rlut.screenW);
     // Size changed, call reshape callback if it's set
     if ((rlut.screenW != lastW || rlut.screenH != lastH) && rlut.reshapeFunc)
         rlut.reshapeFunc(rlut.screenW, rlut.screenH);
@@ -171,7 +159,11 @@ int rlutMainLoop(void) {
         ImTui_ImplText_NewFrame();
         ImGui::NewFrame();
         ResizeScreenBuffer();
-        ResetTextStyle();
+        int ty, tx;
+        getmaxyx(stdscr, ty, tx);
+        assert(rlut.screenBuffer.size() == ty);
+        for (int i = 0; i < ty; i++)
+            assert(rlut.screenBuffer[i].size() == tx);
         
         if (rlut.preframeFunc)
             rlut.preframeFunc();
@@ -181,7 +173,6 @@ int rlutMainLoop(void) {
         wrefresh(stdscr);
         rlutClearScreen();
         
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
         ImGui::Begin("test");
         ImGui::Text("Hello, world!");
         ImGui::End();
@@ -190,24 +181,17 @@ int rlutMainLoop(void) {
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.tuiScreen);
         ImTui_ImplNcurses_UpdateScreen();
         
-        const char *test = "test!";
-        int y = 2, x = 5;
-        for (char *p = (char*)test; *p; p++) {
-            Cell tmp = {
-                .ch = static_cast<uint8_t>(*p),
-                .fg = 0,
-                .bg = 0,
-                .mode = 0
-            };
-            rlut.screenBuffer[y][x++] = tmp.value;
-        }
+        rlutSetCursor(2, 5);
+        rlutPrintString("\x1b[42;31mtest!");
         
         // Keep a 256*256 grid to keep track of all possible ANSI color pairs
         // Each pair has to be created with an index. If this index is used in
         // another piece of text and the colors of that pair are later changed,
         // all text with that color pair index will change too.
-        static int colPairsIndex = 0, lastPairsIndex = -1;
+        static int colPairsIndex = 0;
         static std::array<std::pair<bool, int>, 256*256> colPairs;
+        int lastPairsIndex = -1;
+        move(0, 0);
         for (int y = 0; y < rlut.screenH; y++) {
             // The current row's buffer. Will be flushed either at the end of the
             // row or when there is a color change.
@@ -228,6 +212,12 @@ int rlutMainLoop(void) {
                     cell.bg = static_cast<uint8_t>(b);
                 } else
                     cell.value = rlut.screenBuffer[y][x];
+                // If it's still blank, use a empty space
+                if (!cell.ch) {
+                    cell.bg = rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR];
+                    cell.fg = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
+                    cell.ch = ' ';
+                }
                 // Find the corrosponding color pair from the colPairs matrix
                 // and see if it has been initialized yet. If not, create the
                 // pair and update the pairs matrix
@@ -396,6 +386,7 @@ static bool ParseNextANSIEscapeToken(char *p, bool *isInteger, uint8_t *value, s
     if (value) {
         if (isInt) {
             int v = std::stoi(std::string(buf));
+            // Values must be be 0-255
             if (v < 0 || v > UINT8_MAX)
                 return false;
             *value = static_cast<uint8_t>(v);
@@ -419,11 +410,18 @@ static void ClearLine(int y) {
     std::fill(rlut.screenBuffer[y].begin(), rlut.screenBuffer[y].end(), 0);
 }
 
+static void ResetTextStyle(void) {
+    rlut.textMode = 0;
+    rlut.backgroundColor = rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR];
+    rlut.foregroundColor = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
+}
+
 // Attempt to parse an ANSI escape sequence
 static char* ParseANSIEscape(char *_p) {
     // Check if the first character is not null and = '['
     if (!_p || !*_p || *_p != '[')
         return _p;
+    ResetTextStyle();
     char *p = (char*)++_p;
     int n = 0;
     // Store values in this buffer, maximum of 4 tokens, the mode and up to 3 integer values
@@ -434,11 +432,11 @@ static char* ParseANSIEscape(char *_p) {
     // Keep track of how far we have read into the string
     size_t totalLength = 1, tokenLength = 0;
     while (n < 4 && ParseNextANSIEscapeToken(p, &isInteger, &tmp[n], &tokenLength)) {
+        totalLength += tokenLength;
         // If the token is an integer, check for a semi-colon delimeter and skip to
         // the next token
         if (isInteger) {
             p += tokenLength;
-            totalLength += tokenLength;
             char next = *p;
             if ((next < 'a' && next > 'z') &&
                 (next < 'A' && next > 'Z') &&
@@ -559,9 +557,13 @@ static char* ParseANSIEscape(char *_p) {
                                     ResetTextStyle();
                                 break;
                             case 30 ... 39: // Foreground colors
+                                if (tmp[i] == 38)
+                                    return _p; // Invalid
                                 rlut.foregroundColor = tmp[i] - 30;
                                 break;
                             case 40 ... 49: // Background colors
+                                if (tmp[i] == 48)
+                                    return _p; // Invalid
                                 rlut.backgroundColor = tmp[i] - 40;
                                 break;
                             default: // Unsupported, skip
@@ -583,7 +585,9 @@ static char* ParseANSIEscape(char *_p) {
         // Valid mode, break out of loop and return adjusted pointer
         break;
     }
-    return _p + totalLength + tokenLength;
+    // The -1 is because after returning the string, the original loop will
+    // increment by an extra character, so just trim it off here instead
+    return _p + totalLength - 1;
 }
 
 void rlutPrintString(const char *fmt, ...) {
