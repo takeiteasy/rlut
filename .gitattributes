@@ -1,3 +1,2 @@
-aux/* linguist-vendored
 deps/* linguist-vendored
-*.h linguist-language=c++
+src/*.h linguist-language=c++
