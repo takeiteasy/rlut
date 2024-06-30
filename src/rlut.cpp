@@ -310,7 +310,7 @@ int rlutMainLoop(void) {
                 // RLUT cell state tracker. We have to keep track of this constantly
                 // so that no matter where the ImTui windows are we can keep the
                 // main RLUT screen buffer the right state
-                if (mcell.used || rlut.hints[RLUT_HINT_DISABLE_RUNNING_STATE])
+                if (mcell.used || rlut.hints[RLUT_HINT_DISABLE_RUNNING_COLOR])
                     lastMainindex = mpairIndex;
                 row.push_back(cell.character ? cell.character : ' ');
             }
@@ -498,6 +498,11 @@ static void ResetTextStyle(void) {
     rlut.textMode = 0;
     rlut.backgroundColor = rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR];
     rlut.foregroundColor = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
+    Cell currentCell = (Cell){.value=rlut.screenBuffer[rlut.cursorY][rlut.cursorX]};
+    currentCell.background = rlut.backgroundColor;
+    currentCell.foreground = rlut.backgroundColor;
+    currentCell.used = 1;
+    rlut.screenBuffer[rlut.cursorY][rlut.cursorX] = currentCell.value;
 }
 
 static int ToAnsiColor(int n) {

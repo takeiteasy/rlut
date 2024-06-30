@@ -73,19 +73,18 @@ enum {
     RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE,
     RLUT_HINT_ENABLE_Y_WRAP,
     RLUT_HINT_DISABLE_UTF8,
-    RLUT_HINT_DISABLE_RUNNING_STATE,
+    RLUT_HINT_DISABLE_RUNNING_COLOR,
     RLUT_HINT_INITIAL_SEED
 };
 
 #define RLUT_HINT_LAST RLUT_HINT_INITIAL_SEED
 
-// TODO: Rewrite screen buffer resizing function
 // TODO: Text Modes (bold, italics)
 // TODO: Input + event handling + forwarding
 // TODO: Try and generate wrapper for ImGui
 // TODO: A*, Poisson disc sampling, FOV functions
 // TODO: Alternate SDL GUI version (after TUI version is finished)
-// TODO: UTF-8 support to PrintChar + PrintString
+// TODO: UTF-8 support for PrintChar + PrintString
 // TODO: Panel API
 //  - Panels are boxes that you can write text to like the main buffer
 //  - API will handle rendering + text-wrapping
