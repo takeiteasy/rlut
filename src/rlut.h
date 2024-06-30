@@ -73,6 +73,7 @@ enum {
     RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE,
     RLUT_HINT_ENABLE_Y_WRAP,
     RLUT_HINT_DISABLE_UTF8,
+    RLUT_HINT_DISABLE_RUNNING_STATE,
     RLUT_HINT_INITIAL_SEED
 };
 
@@ -81,15 +82,16 @@ enum {
 // TODO: Rewrite screen buffer resizing function
 // TODO: Text Modes (bold, italics)
 // TODO: Input + event handling + forwarding
-// TODO: Update ImGUI to v1.84 + generate C wrapper
+// TODO: Try and generate wrapper for ImGui
 // TODO: A*, Poisson disc sampling, FOV functions
 // TODO: Alternate SDL GUI version (after TUI version is finished)
 // TODO: UTF-8 support to PrintChar + PrintString
 // TODO: Panel API
-//        - Panels are boxes that you can write text to like the main buffer
-//        - API will handle rendering + text-wrapping
-//        - Push/Pop immediate mode style
+//  - Panels are boxes that you can write text to like the main buffer
+//  - API will handle rendering + text-wrapping
+//  - Push/Pop immediate mode style
 // TODO: Build without ImGui/ImTui option
+// TODO: Simple event emitter
 
 // Windows + context functions
 int rlutInit(int argc, const char *argv[]);

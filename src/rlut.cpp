@@ -96,6 +96,7 @@ static struct {
         0,   // RLUT_HINT_DISABLE_TEXT_WRAP
         0,   // RLUT_HINT_DISABLE_TEXT_AUTO_ADVANCE
         0,   // RLUT_HINT_DISABLE_UTF8
+        0,   // RLUT_HINT_DISABLE_RUNNING_STATE
         0    // RLUT_HINT_INITIAL_SEED
     };
 } rlut;
@@ -206,7 +207,6 @@ int rlutMainLoop(void) {
         
         ImGui::Render();
         ImTui_ImplText_RenderDrawData(ImGui::GetDrawData(), rlut.tuiScreen);
-        ImTui_ImplNcurses_UpdateScreen();
         
         // Rendering RLUT + ImTui screen buffers to NCurses
         uint8_t defaultForeground = rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR];
@@ -276,7 +276,7 @@ int rlutMainLoop(void) {
                 // RLUT cell state tracker. We have to keep track of this constantly
                 // so that no matter where the ImTui windows are we can keep the
                 // main RLUT screen buffer the right state
-                if (mcell.used)
+                if (mcell.used || rlut.hints[RLUT_HINT_DISABLE_RUNNING_STATE])
                     lastMainindex = mpairIndex;
                 row.push_back(cell.character ? cell.character : ' ');
             }
@@ -284,6 +284,8 @@ int rlutMainLoop(void) {
             if (!row.empty())
                 addstr(row.data());
         }
+        
+        ImTui_ImplNcurses_UpdateScreen();
     }
     
     if (rlut.postframeFunc)
