@@ -139,10 +139,49 @@ void rlutAtExit(void(*func)(void)) {
     rlut.atExitFunc = func;
 }
 
+const Cell DefaultCell(void) {
+    return (Cell) {
+        .character = ' ',
+        .foreground = static_cast<uint8_t>(rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR]),
+        .background = static_cast<uint8_t>(rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR]),
+        .mode = -1,
+        .used = 0
+    };
+}
+
+uint64_t DefaultCellValue(void) {
+    return DefaultCell().value;
+}
+
 static void ResizeScreenBuffer(void) {
-    static int lastW = rlut.screenW, lastH = rlut.screenH;
+    int lastW = rlut.screenW, lastH = rlut.screenH;
     rlutScreenSize(&rlut.screenW, &rlut.screenH);
     
+    if (lastH != rlut.screenH) {
+        // Has the window's height shrunk?
+        if (lastH > rlut.screenH)
+            rlut.screenBuffer.resize(rlut.screenH);
+        else { // Has it grown?
+            uint64_t cell = DefaultCellValue();
+            for (int x = 0; x < rlut.screenH - lastH; x++)
+                rlut.screenBuffer.push_back(std::vector<uint64_t>(rlut.screenW, cell));
+        }
+    }
+    
+    if (lastW != rlut.screenW) {
+        // Has the window's width shrunk?
+        if (lastW > rlut.screenW)
+            for (int y = 0; y < rlut.screenH; y++)
+                rlut.screenBuffer[y].resize(rlut.screenW);
+        else { // Has it grown?
+            uint64_t cell = DefaultCellValue();
+            int n = rlut.screenW - lastW;
+            for (int y = 0; y < rlut.screenH; y++)
+                for (int x = 0; x < n; x++)
+                    rlut.screenBuffer[y].push_back(cell);
+        }
+    }
+
     // Size changed, call reshape callback if it's set
     if ((rlut.screenW != lastW || rlut.screenH != lastH) && rlut.reshapeFunc)
         rlut.reshapeFunc(rlut.screenW, rlut.screenH);
@@ -190,11 +229,6 @@ int rlutMainLoop(void) {
         ImGui::NewFrame();
         
         ResizeScreenBuffer();
-//        int ty, tx;
-//        getmaxyx(stdscr, ty, tx);
-//        assert(rlut.screenBuffer.size() == ty);
-//        for (int i = 0; i < ty; i++)
-//            assert(rlut.screenBuffer[i].size() == tx);
         
         if (rlut.preframeFunc)
             rlut.preframeFunc();
@@ -299,18 +333,11 @@ int rlutMainLoop(void) {
 }
 
 static void ClearScreenBuffer(void) {
-    const Cell DefaultCell = {
-        .character = ' ',
-        .foreground = static_cast<uint8_t>(rlut.hints[RLUT_HINT_DEFAULT_FOREGROUND_COLOR]),
-        .background = static_cast<uint8_t>(rlut.hints[RLUT_HINT_DEFAULT_BACKGROUND_COLOR]),
-        .mode = -1,
-        .used = 0
-    };
-    
+    uint64_t cell = DefaultCellValue();
     rlut.screenBuffer.clear();
     rlut.screenBuffer.reserve(rlut.screenH);
     for (int y = 0; y < rlut.screenH; y++)
-        rlut.screenBuffer.push_back(std::vector<uint64_t>(rlut.screenW, DefaultCell.value));
+        rlut.screenBuffer.push_back(std::vector<uint64_t>(rlut.screenW, cell));
     rlut.cursorX = rlut.cursorY = 0;
     move(0, 0);
 }
